@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(prettier:*)",
+      "Bash(node:*)",
+      "Bash(uv run:*)",
+      "Bash(chmod:*)",
+      "Bash(open:*)"
+    ],
+    "deny": [
+      "Bash(rm *)"
+    ]
+  }
+}
