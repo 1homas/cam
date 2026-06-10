@@ -10,72 +10,87 @@ https://api.meraki.com/api/v1/organizations/$MERAKI_ORG_ID/openapiSpec?version=3
 
 ## Scripts
 
-### `cam-clients.py`
-
-List all NAC clients from CAM in JSON, YAML, CSV, or table format.
-
-```sh
-cam-clients.py                    # List all clients as JSON
-cam-clients.py --help             # Show command options
-cam-clients.py --format table     # Pretty-printed ASCII table
-cam-clients.py --format csv       # CSV format
-cam-clients.py -v                 # Verbose logging
-```
-
 ### `cam-clients-export.py`
 
-Export NAC clients from CAM in JSON, YAML, CSV, or table format. Supports filtering by any attribute using repeatable `--filter key=value` with dot notation for nested fields (case-insensitive startswith matching).
+Export NAC clients from CAM with filtering. Supports filtering by any attribute using repeatable `--filter key=value` with dot notation for nested fields (case-insensitive startswith matching).
 
 **Note**: Due to a Meraki API bug, only the first 1,000 clients can be exported.
 
 ```sh
-cam-clients-export.py                                        # Export first 1000 clients as JSON
-cam-clients-export.py --help                                 # Show command options and examples
-cam-clients-export.py --format table                         # Pretty-printed ASCII table
-cam-clients-export.py --format csv --filter status=Connected # Connected clients as CSV
-cam-clients-export.py -f ssid=Guest -f source=Discovered     # Multiple filters (AND logic)
-cam-clients-export.py --filter classification.os=iOS         # Filter by nested field
-cam-clients-export.py -v                                     # Verbose logging (shows API limitation warning)
+# Export all clients as JSON
+cam-clients-export.py
+
+# Export all clients to CSV for spreadsheet import
+cam-clients-export.py --format csv > clients.csv
+
+# View all clients in a table
+cam-clients-export.py --format table
+
+# Export all connected clients to CSV
+cam-clients-export.py --format csv --filter status=Connected > connected.csv
+
+# Find all Guest SSID devices that were discovered (not provisioned)
+cam-clients-export.py --format table -f ssid=Guest -f source=Discovered
+
+# Find all iOS devices using nested field filtering
+cam-clients-export.py --filter classification.os=iOS
+
+# Multiple filters work with AND logic
+cam-clients-export.py -f owner=jsmith -f ssid=Corp --format table
 ```
 
 ### `cam-clients-add.py`
 
-Bulk add NAC clients to CAM from a base64-encoded CSV file or CSV file path. Supports updating existing clients and creating new groups.
+Bulk add NAC clients to CAM from a CSV file. Supports updating existing clients and creating new groups. Automatically batches large uploads (>1000 rows).
 
 ```sh
-cam-clients-add.py --file clients.csv                        # Upload clients from CSV file
-cam-clients-add.py --help                                    # Show command options and examples
-cam-clients-add.py "base64_string"                           # Upload from base64-encoded CSV
-cam-clients-add.py --file clients.csv --create-groups        # Upload and create groups
-cam-clients-add.py --file clients.csv --no-update-clients    # Skip updating existing clients
-cam-clients-add.py --file clients.csv --format json          # Full JSON response
-cam-clients-add.py --file clients.csv -v                     # Verbose logging
+# Upload clients from CSV file
+cam-clients-add.py --file clients.csv
+
+# Upload and automatically create any missing groups
+cam-clients-add.py --file clients.csv --create-groups
+
+# Upload from base64-encoded CSV (useful for APIs/automation)
+cam-clients-add.py "$(base64 < clients.csv)"
+
+# Upload large file with verbose progress
+cam-clients-add.py --file 10000-clients.csv -v
 ```
 
 ### `cam-guest-purge.py`
 
-Purge stale Guest clients from CAM. Finds disconnected, discovered clients on guest SSIDs older than a specified age and deletes them via the Meraki bulkDelete API.
+Purge stale guest clients from CAM. Finds disconnected, discovered clients on guest SSIDs older than 7 days (default) and deletes them.
 
 ```sh
-cam-guest-purge.py --ssid Guest          # Delete guests older than 7 days (silent)
-cam-guest-purge.py --help                 # Show command options and examples
-cam-guest-purge.py --ssid Guest --age 2d12h  # Custom age threshold
-cam-guest-purge.py --ssid Visitor --dry-run   # List matches without deleting
-cam-guest-purge.py --ssid Guest -v        # Verbose logging
+# Delete Guest SSID clients older than 7 days
+cam-guest-purge.py --ssid Guest
+
+# Delete Visitor SSID clients older than 2.5 days
+cam-guest-purge.py --ssid Visitor --age 2d12h
+
+# Preview what would be deleted without actually deleting
+cam-guest-purge.py --ssid Guest --dry-run
+
+# Show detailed progress
+cam-guest-purge.py --ssid Guest -v
 ```
 
 ### `cam-clients-delete.py`
 
-Delete all NAC clients and groups from CAM. Removes all clients via bulkDelete endpoint and all groups individually. Useful for cleaning test environments or resetting NAC state.
+Delete all NAC clients and groups from CAM. Useful for cleaning test environments or resetting NAC state.
 
-**Note**: Due to a Meraki API bug, only 1000 clients can be fetched per request. Use `--loop` to automatically delete all clients.
+**Note**: Due to a Meraki API bug, only 1000 clients can be fetched per request. Use `--loop` to delete all clients when you have more than 1000.
 
 ```sh
-cam-clients-delete.py --dry-run           # Preview what would be deleted
-cam-clients-delete.py --help              # Show command options and examples
-cam-clients-delete.py --loop              # Delete ALL clients and groups (handles >1000 clients)
-cam-clients-delete.py --clients-only      # Delete up to 1000 clients
-cam-clients-delete.py --clients-only --loop # Delete ALL clients
-cam-clients-delete.py --groups-only       # Delete only groups
-cam-clients-delete.py -v --loop           # Verbose logging with loop
+# Preview what would be deleted (safe, no changes)
+cam-clients-delete.py --dry-run
+
+# Delete ALL clients and groups (handles >1000 clients automatically)
+cam-clients-delete.py --loop
+
+# Delete only clients, keep groups
+cam-clients-delete.py --clients-only --loop
+
+# Delete only groups, keep clients
+cam-clients-delete.py --groups-only
 ```
