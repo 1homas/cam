@@ -20,7 +20,7 @@ Matching criteria:
   - lastLogin.timestamp <= now - age
 
 Usage:
-    uv run cam-guest-purge.py --ssid Guest [--age SECONDS] [--dry-run]
+    cam-guest-purge.py --ssid Guest [--age SECONDS] [--dry-run]
 """
 
 import asyncio

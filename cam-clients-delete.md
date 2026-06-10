@@ -48,31 +48,31 @@ MERAKI_ORG_ID=your_org_id_here
 ### Delete all clients and groups (with --loop for >1000 clients)
 
 ```bash
-uv run cam-clients-delete.py --loop
+cam-clients-delete.py --loop
 ```
 
 ### Delete all clients in one batch (max 1000)
 
 ```bash
-uv run cam-clients-delete.py --clients-only
+cam-clients-delete.py --clients-only
 ```
 
 ### Delete only groups
 
 ```bash
-uv run cam-clients-delete.py --groups-only
+cam-clients-delete.py --groups-only
 ```
 
 ### Dry run (preview without deleting)
 
 ```bash
-uv run cam-clients-delete.py --dry-run
+cam-clients-delete.py --dry-run
 ```
 
 ### Verbose output
 
 ```bash
-uv run cam-clients-delete.py --verbose --loop
+cam-clients-delete.py --verbose --loop
 ```
 
 ## API Endpoints

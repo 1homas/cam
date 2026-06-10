@@ -14,7 +14,7 @@ Deletes all NAC clients and/or groups from the organization via the
 Meraki Dashboard API endpoints.
 
 Usage:
-    uv run cam-clients-delete.py [--clients-only | --groups-only] [--dry-run] [--no-loop]
+    cam-clients-delete.py [--clients-only | --groups-only] [--dry-run] [--no-loop]
 """
 
 import asyncio

@@ -88,28 +88,28 @@ GET https://api.meraki.com/api/v1/organizations/$MERAKI_ORG_ID/nac/clients
 
 ```bash
 # Export all clients as JSON (default)
-uv run cam-client-export.py
+cam-client-export.py
 
 # Export as pretty table
-uv run cam-client-export.py --format table
+cam-client-export.py --format table
 
 # Export connected clients as CSV
-uv run cam-client-export.py --format csv --filter status=Connected
+cam-client-export.py --format csv --filter status=Connected
 
 # Export guest SSID clients as YAML
-uv run cam-client-export.py --format yaml --filter ssid=Guest
+cam-client-export.py --format yaml --filter ssid=Guest
 
 # Filter by nested field (classification.os)
-uv run cam-client-export.py --filter classification.os=iOS
+cam-client-export.py --filter classification.os=iOS
 
 # Multiple filters (AND logic)
-uv run cam-client-export.py --filter status=Connected --filter source=Provisioned
+cam-client-export.py --filter status=Connected --filter source=Provisioned
 
 # Short flag form
-uv run cam-client-export.py -f owner=jsmith -f ssid=Corp
+cam-client-export.py -f owner=jsmith -f ssid=Corp
 
 # Export discovered clients with verbose logging
-uv run cam-client-export.py --filter source=Discovered -v
+cam-client-export.py --filter source=Discovered -v
 ```
 
 ## Testing

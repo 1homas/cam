@@ -16,7 +16,7 @@ JSON, YAML, CSV, or table format. Supports filtering by any attribute
 using --filter key=value (repeatable, dot notation for nested fields).
 
 Usage:
-    uv run cam-clients-export.py [--format json|yaml|csv|table] [--filter key=value]... [-v]
+    cam-clients-export.py [--format json|yaml|csv|table] [--filter key=value]... [-v]
 """
 
 import asyncio
@@ -246,11 +246,11 @@ def main(fmt: str, filters: tuple[str, ...], verbose: bool) -> None:
 
     \b
     Examples:
-      uv run cam-clients-export.py                          # Export first 1000 clients as JSON
-      uv run cam-clients-export.py --filter status=Connected
-      uv run cam-clients-export.py --format csv -f ssid=Guest -f source=Discovered
-      uv run cam-clients-export.py --filter classification.os=iOS
-      uv run cam-clients-export.py --format table -f owner=jsmith -v
+      cam-clients-export.py                          # Export first 1000 clients as JSON
+      cam-clients-export.py --filter status=Connected
+      cam-clients-export.py --format csv -f ssid=Guest -f source=Discovered
+      cam-clients-export.py --filter classification.os=iOS
+      cam-clients-export.py --format table -f owner=jsmith -v
     """
     if verbose:
         logger.setLevel(logging.INFO)

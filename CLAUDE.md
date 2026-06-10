@@ -2,7 +2,7 @@
 
 ## Setup
 
-- Install `uv` and always run Python scripts as PEP 723 with `uv run`
+- Install `uv` — scripts use PEP 723 inline metadata and can be executed directly (shebangs use `#!/usr/bin/env -S uv run`)
 
 ## Documentation
 
