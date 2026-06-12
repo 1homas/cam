@@ -10,33 +10,48 @@ https://api.meraki.com/api/v1/organizations/$MERAKI_ORG_ID/openapiSpec?version=3
 
 ## Scripts
 
-### `cam-clients-export.py`
+### `cam-api-status.py`
 
-Export NAC clients from CAM with filtering. Supports filtering by any attribute using repeatable `--filter key=value` with dot notation for nested fields (case-insensitive startswith matching).
+Test **all available** Cisco Access Manager (CAM) `/nac/` API endpoints and save responses. Automatically discovers and tests parameterized endpoints (dictionary attributes, session details) based on returned data.
+
+```sh
+# Test all endpoints and save responses to api_test/
+./cam-api-status.py
+
+# View specific response
+cat api_test/nac_clients.json | jq '.'
+
+# Count total API calls
+ls -1 api_test/*.json | wc -l
+```
+
+### `cam-clients.py`
+
+Export NAC clients from CAM with filtering. Supports filtering by any attribute using repeatable `--filter key=value` with dot notation for nested fields (case-insensitive substring/contains matching).
 
 **Note**: Due to a Meraki API bug, only the first 1,000 clients can be exported.
 
 ```sh
 # Export all clients as JSON
-cam-clients-export.py
+cam-clients.py
 
 # Export all clients to CSV for spreadsheet import
-cam-clients-export.py --format csv > clients.csv
+cam-clients.py --format csv > clients.csv
 
 # View all clients in a table
-cam-clients-export.py --format table
+cam-clients.py --format table
 
 # Export all connected clients to CSV
-cam-clients-export.py --format csv --filter status=Connected > connected.csv
+cam-clients.py --format csv --filter status=Connected > connected.csv
 
 # Find all Guest SSID devices that were discovered (not provisioned)
-cam-clients-export.py --format table -f ssid=Guest -f source=Discovered
+cam-clients.py --format table -f ssid=Guest -f source=Discovered
 
 # Find all iOS devices using nested field filtering
-cam-clients-export.py --filter classification.os=iOS
+cam-clients.py --filter classification.os=iOS
 
 # Multiple filters work with AND logic
-cam-clients-export.py -f owner=jsmith -f ssid=Corp --format table
+cam-clients.py -f owner=jsmith -f ssid=Corp --format table
 ```
 
 ### `cam-clients-add.py`
@@ -55,6 +70,9 @@ cam-clients-add.py "$(base64 < clients.csv)"
 
 # Upload large file with verbose progress
 cam-clients-add.py --file 10000-clients.csv -v
+
+# Upload with custom timeout (default: 60s)
+cam-clients-add.py --file clients.csv --timeout 120
 ```
 
 ### `cam-guest-purge.py`
@@ -93,4 +111,25 @@ cam-clients-delete.py --clients-only --loop
 
 # Delete only groups, keep clients
 cam-clients-delete.py --groups-only
+```
+
+### `mac-generator.py`
+
+Generate random MAC addresses with optional OUI specification. Useful for creating test data, bulk client uploads, or network simulations.
+
+```sh
+# Generate a single MAC address with random OUI (default)
+./mac-generator.py
+
+# Generate 5 MAC addresses with a specific OUI (e.g., Cisco's OUI)
+./mac-generator.py -c 5 -o c0:ff:ee
+
+# Generate 10 MAC addresses in uppercase
+./mac-generator.py -c 10 --upper
+
+# Generate 3 MAC addresses with random OUIs
+./mac-generator.py -c 3
+
+# Generate MAC addresses with specific OUI in uppercase
+./mac-generator.py -c 5 -o c0:ff:ee --upper
 ```
