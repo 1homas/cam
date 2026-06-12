@@ -1,5 +1,6 @@
 # Environments
 .env
+.env_*
 .venv/
 
 # AI
@@ -19,6 +20,9 @@ uv.lock
 # Logs
 logs/
 *.log
+
+# Backups
+backups/
 
 # Python
 __pycache__/
