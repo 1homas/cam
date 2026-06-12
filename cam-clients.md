@@ -12,12 +12,12 @@ Due to a Meraki API pagination bug, **only the first 1,000 clients can be export
 
 Must show these in the `--help` option along with example usage:
 
-| Flag          | Type   | Default | Description                                                                 |
-| ------------- | ------ | ------- | --------------------------------------------------------------------------- |
-| --format      | choice | `json`  | Output format: `json`, `yaml`, `csv`, or `table` (Markdown)                 |
-| --filter, -f  | string | (none)  | Filter by key=value (repeatable, dot notation, case-insensitive startswith) |
-| -v, --verbose | flag   | false   | Enable verbose logging                                                      |
-| --help        | flag   |         | Show command options and examples                                           |
+| Flag          | Type   | Default | Description                                                               |
+| ------------- | ------ | ------- | ------------------------------------------------------------------------- |
+| --format      | choice | `json`  | Output format: `json`, `yaml`, `csv`, or `table` (Markdown)               |
+| --filter, -f  | string | (none)  | Filter by key=value (repeatable, dot notation, case-insensitive contains) |
+| -v, --verbose | flag   | false   | Enable verbose logging                                                    |
+| --help        | flag   |         | Show command options and examples                                         |
 
 ## Environment Variables
 
@@ -45,7 +45,7 @@ Loaded from `.env` via `python-dotenv`.
 
 - **Pagination**: Limited to first 1,000 clients due to Meraki API bug (no Link headers provided, `startingAfter` returns 500 errors)
 - **Rate limiting**: Retries on HTTP 429 using `Retry-After` header
-- **Filtering**: Applied client-side after fetching records; multiple filters combine with AND logic; matching is case-insensitive startswith
+- **Filtering**: Applied client-side after fetching records; multiple filters combine with AND logic; matching is case-insensitive substring (contains)
 - **Dot notation**: Nested fields are accessed via dot notation (e.g. `classification.os`, `lastLogin.location`)
 - **Logging**: Structured output with ISO 8601 timestamps to stderr
 - **Warning**: Script warns when `meta.totalCount` shows more than 1,000 clients exist
@@ -88,32 +88,32 @@ GET https://api.meraki.com/api/v1/organizations/$MERAKI_ORG_ID/nac/clients
 
 ```bash
 # Export all clients as JSON (default)
-cam-client-export.py
+cam-clients.py
 
 # Export as pretty table
-cam-client-export.py --format table
+cam-clients.py --format table
 
 # Export connected clients as CSV
-cam-client-export.py --format csv --filter status=Connected
+cam-clients.py --format csv --filter status=Connected
 
 # Export guest SSID clients as YAML
-cam-client-export.py --format yaml --filter ssid=Guest
+cam-clients.py --format yaml --filter ssid=Guest
 
 # Filter by nested field (classification.os)
-cam-client-export.py --filter classification.os=iOS
+cam-clients.py --filter classification.os=iOS
 
 # Multiple filters (AND logic)
-cam-client-export.py --filter status=Connected --filter source=Provisioned
+cam-clients.py --filter status=Connected --filter source=Provisioned
 
 # Short flag form
-cam-client-export.py -f owner=jsmith -f ssid=Corp
+cam-clients.py -f owner=jsmith -f ssid=Corp
 
 # Export discovered clients with verbose logging
-cam-client-export.py --filter source=Discovered -v
+cam-clients.py --filter source=Discovered -v
 ```
 
 ## Testing
 
 - Use TDD for all operations
-- Test file: `cam-client-export_test.py`
+- Test file: `cam-clients_test.py`
 - Tests cover: all formatters, filter logic, pagination, and rate-limit retry

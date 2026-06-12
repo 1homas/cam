@@ -16,7 +16,7 @@ JSON, YAML, CSV, or table format. Supports filtering by any attribute
 using --filter key=value (repeatable, dot notation for nested fields).
 
 Usage:
-    cam-clients-export.py [--format json|yaml|csv|table] [--filter key=value]... [-v]
+    cam-clients.py [--format json|yaml|csv|table] [--filter key=value]... [-v]
 """
 
 import asyncio
@@ -114,8 +114,8 @@ async def fetch_all_clients(client: httpx.AsyncClient, org_id: str) -> list[dict
             meta = data['meta']
             total_count = meta.get('totalCount', 0)
             if total_count > len(clients):
-                logger.warning(f"⚠️  API reports {total_count} total clients but only {len(clients)} exported (Meraki API limitation)")
-                logger.warning(f"⚠️  Use cam-clients-delete.py --loop for full deletion of all clients")
+                logger.warning(f"⚠️  API reports {total_count} total clients but only {len(clients)} fetched (Meraki API limitation)")
+                logger.warning(f"⚠️  Cannot fetch more than 1000 clients due to API pagination bug")
 
         # Check for Link header pagination (not provided by Meraki API)
         link_header = response.headers.get("Link", "")
@@ -130,12 +130,12 @@ async def fetch_all_clients(client: httpx.AsyncClient, org_id: str) -> list[dict
 def filter_clients(clients: list[dict], filters: list[tuple[str, str]]) -> list[dict]:
     """Filter clients by arbitrary key=value pairs. Supports dot notation for nested fields.
 
-    Uses case-insensitive startswith matching.
+    Uses case-insensitive substring matching (contains).
     """
     result = clients
     for key, value in filters:
         value_lower = value.lower()
-        result = [c for c in result if _get_nested(c, key).lower().startswith(value_lower)]
+        result = [c for c in result if value_lower in _get_nested(c, key).lower()]
     return result
 
 
@@ -246,11 +246,11 @@ def main(fmt: str, filters: tuple[str, ...], verbose: bool) -> None:
 
     \b
     Examples:
-      cam-clients-export.py                          # Export first 1000 clients as JSON
-      cam-clients-export.py --filter status=Connected
-      cam-clients-export.py --format csv -f ssid=Guest -f source=Discovered
-      cam-clients-export.py --filter classification.os=iOS
-      cam-clients-export.py --format table -f owner=jsmith -v
+      cam-clients.py                          # Export first 1000 clients as JSON
+      cam-clients.py --filter status=Connected
+      cam-clients.py --format csv -f ssid=Guest -f source=Discovered
+      cam-clients.py --filter classification.os=iOS
+      cam-clients.py --format table -f owner=jsmith -v
     """
     if verbose:
         logger.setLevel(logging.INFO)
