@@ -25,18 +25,42 @@ cat api_test/nac_clients.json | jq '.'
 ls -1 api_test/*.json | wc -l
 ```
 
-### `cam-clients.py`
+### `cam-backup.py`
 
-Export NAC clients from CAM with filtering. Supports filtering by any attribute using repeatable `--filter key=value` with dot notation for nested fields (case-insensitive substring/contains matching).
-
-**Note**: Due to a Meraki API bug, only the first 1,000 clients can be exported.
+Backup all CAM data from multiple API endpoints to date-stamped JSON files. Creates `backups/YYYY-MM-DD/` directory structure and fetches clients, groups, policies, certificates, and other NAC configuration data. Supports automatic pagination for large datasets.
 
 ```sh
-# Export all clients as JSON
+# Backup to ./backups/2026-06-12/
+cam-backup.py
+
+# Backup to specific directory
+cam-backup.py --dir /data
+
+# Verbose logging with progress details
+cam-backup.py -v
+```
+
+### `cam-clients.py`
+
+Export NAC clients from CAM with filtering and pagination. Supports filtering by any attribute using repeatable `--filter key=value` with dot notation for nested fields (case-insensitive substring/contains matching). Configure batch size and limits for flexible data retrieval.
+
+**Features**: Offset-based pagination fetches all clients. Use `--batch` to control request size (default: 1000) and `--limit` to cap results.
+
+```sh
+# Export all clients as JSON (default batch size: 1000)
 cam-clients.py
+
+# Export first 100 clients for quick preview
+cam-clients.py --limit 100
+
+# Export with custom batch size
+cam-clients.py --batch 500
 
 # Export all clients to CSV for spreadsheet import
 cam-clients.py --format csv > clients.csv
+
+# Quick preview of first 50 clients in table format
+cam-clients.py --limit 50 --format table
 
 # View all clients in a table
 cam-clients.py --format table
@@ -52,6 +76,9 @@ cam-clients.py --filter classification.os=iOS
 
 # Multiple filters work with AND logic
 cam-clients.py -f owner=jsmith -f ssid=Corp --format table
+
+# Combine limit with filters for targeted preview
+cam-clients.py --limit 25 --filter ssid=Guest --format table
 ```
 
 ### `cam-clients-add.py`
@@ -95,22 +122,34 @@ cam-guest-purge.py --ssid Guest -v
 
 ### `cam-clients-delete.py`
 
-Delete all NAC clients and groups from CAM. Useful for cleaning test environments or resetting NAC state.
+Delete all NAC clients and groups from CAM using a continuous pipeline architecture. Useful for cleaning test environments or resetting NAC state.
 
-**Note**: Due to a Meraki API bug, only 1000 clients can be fetched per request. Use `--loop` to delete all clients when you have more than 1000.
+**Architecture**: Uses a producer-consumer pipeline with 1 fetch worker sequentially fetching all pages while N-1 delete workers process them concurrently. Simple, efficient, and easy to reason about.
 
 ```sh
 # Preview what would be deleted (safe, no changes)
 cam-clients-delete.py --dry-run
 
-# Delete ALL clients and groups (handles >1000 clients automatically)
-cam-clients-delete.py --loop
+# Delete ALL clients and groups (continuous pipeline)
+cam-clients-delete.py
+
+# Delete with 8 workers (1 fetch + 7 delete) for faster operation
+cam-clients-delete.py --workers 8
+
+# Delete with 16 workers (1 fetch + 15 delete) for maximum performance
+cam-clients-delete.py --workers 16 --timeout 120 --verbose
+
+# Delete with increased timeout for large batches
+cam-clients-delete.py --timeout 120
 
 # Delete only clients, keep groups
-cam-clients-delete.py --clients-only --loop
+cam-clients-delete.py --clients-only
 
 # Delete only groups, keep clients
 cam-clients-delete.py --groups-only
+
+# Limit deletion to first N clients
+cam-clients-delete.py --limit 5000
 ```
 
 ### `mac-generator.py`

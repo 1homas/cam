@@ -3,6 +3,7 @@
 ## Setup
 
 - Install `uv` — scripts use PEP 723 inline metadata and can be executed directly (shebangs use `#!/usr/bin/env -S uv run`)
+- Always use `uv` to run all scripts, even ephemeral ones
 
 ## Documentation
 
