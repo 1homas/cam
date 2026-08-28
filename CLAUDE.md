@@ -9,6 +9,7 @@
 
 - Update `ReadMe.md` with any new scripts and features
 - Update the `<script>.md` specification file with any added features
+- Usage examples belong in the top-of-file module docstring (the script heredoc), not in the `main()` function's docstring. Click's `--help` renders `main()`'s docstring, so keep that one short (one-paragraph summary only) and put the full `Examples:` list in the module docstring at the top of the file.
 
 ## Key Files
 

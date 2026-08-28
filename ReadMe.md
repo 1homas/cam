@@ -81,6 +81,37 @@ cam-clients.py -f owner=jsmith -f ssid=Corp --format table
 cam-clients.py --limit 25 --filter ssid=Guest --format table
 ```
 
+### `cam-network-clients.py`
+
+Download all clients from all networks in the org, asynchronously. Uses the standard per-network Meraki client endpoint (`/networks/{id}/clients`), not the CAM NAC endpoint used by `cam-clients.py`, so it captures every client Meraki has seen — not just NAC-registered ones. Supports the same `--filter key=value` filtering with dot notation.
+
+**Features**: Fetches networks concurrently (bounded by `--concurrency`, default 5). A network that errors out is logged and skipped rather than aborting the run. Each client is tagged with `_networkId`/`_networkName`. Default output format is CSV.
+
+**Output columns** (CSV/table, in order): `MAC address`, `Endpoint device group` (always blank — no such field on network clients), `Description`, `_networkId`, `_networkName`, `id`, `ip`, `ip6`, `vlan`, `namedVlan`, `ssid`, `switchport`, `status`, `os`, `manufacturer`, `user`, `usage.sent`, `usage.recv`, `recentDeviceConnection`, `recentDeviceName`, `firstSeen`, `lastSeen`, `notes`
+
+```sh
+# Download all clients from all networks as CSV (default)
+cam-network-clients.py > all-clients.csv
+
+# Export as JSON
+cam-network-clients.py --format json
+
+# Limit to a single network
+cam-network-clients.py -n N_123456789
+
+# Fetch more networks concurrently
+cam-network-clients.py --concurrency 10
+
+# Only clients seen in the last day (default lookback is the API max: 31 days)
+cam-network-clients.py --timespan 86400
+
+# Filter to online clients on a specific SSID
+cam-network-clients.py --filter status=Online -f ssid=Guest
+
+# Quick preview: first 100 clients per network, as a table
+cam-network-clients.py --limit 100 --format table
+```
+
 ### `cam-clients-add.py`
 
 Bulk add NAC clients to CAM from a CSV file. Supports updating existing clients and creating new groups. Automatically batches large uploads (>1000 rows).
@@ -150,6 +181,81 @@ cam-clients-delete.py --groups-only
 
 # Limit deletion to first N clients
 cam-clients-delete.py --limit 5000
+```
+
+### `cam-users.py`
+
+Export Meraki Auth Users (local authentication users) from Meraki networks. **By default, fetches users from ALL networks in the organization.** Fetches 802.1X, Guest, and Client VPN users with filtering and pagination. Supports filtering by any attribute using repeatable `--filter key=value` with dot notation for nested fields.
+
+**Features**: Link header pagination fetches all users. Use `--batch` to control request size (default: 100) and `--limit` to cap results per network. Each user includes `_networkId` field for network context.
+
+```sh
+# Export all users from ALL networks (default)
+cam-users.py
+
+# Export all users to CSV
+cam-users.py --format csv > all-users.csv
+
+# Export users from a specific network only
+cam-users.py --network N_123456789
+
+# Export first 50 users per network for quick preview
+cam-users.py --limit 50 --format table
+
+# Export all Guest users to CSV (across all networks)
+cam-users.py --filter accountType=Guest --format csv > guests.csv
+
+# Find all 802.1X users in a specific network
+cam-users.py -n N_123 --filter accountType=802.1X --format table
+
+# Find users by email domain (all networks)
+cam-users.py --filter email=@example.com
+
+# Find expiring guest accounts across all networks
+cam-users.py --filter accountType=Guest -f authorizations.0.expiresAt=2026-12
+
+# Export in different formats with verbose logging
+cam-users.py --format yaml -v
+cam-users.py -n N_123 --format table -v
+```
+
+### `cam-users-add.py`
+
+Bulk import Meraki Auth Users from CSV file. Imports local authentication users (802.1X, Guest, Client VPN) with parallel uploads, automatic batching, and validation. Designed for scale with support for millions of users.
+
+**Features**: Pre-flight validation, parallel uploads (configurable workers), automatic chunking, rate limit handling, progress reporting.
+
+```sh
+# Import users from CSV
+cam-users-add.py --network N_123456789 --file users.csv
+
+# Import with more workers for faster processing
+cam-users-add.py -n N_123 -f users.csv --workers 20 -v
+
+# Import a million users with high concurrency
+cam-users-add.py -n N_123 -f million-users.csv --workers 50 --timeout 60 -v
+
+# Generate test data first
+user-generator.py --count 100000 --output test-100k.csv
+cam-users-add.py -n N_123 -f test-100k.csv -w 20
+```
+
+### `user-generator.py`
+
+Generate CSV files with N Meraki Auth Users for bulk import testing. Creates test data for validating cam-users-add.py at scale.
+
+```sh
+# Generate 1,000,000 users (~150 MB CSV)
+user-generator.py --count 1000000 --output million-users.csv
+
+# Generate 100,000 802.1X users
+user-generator.py -c 100000 -o users-100k.csv --type "802.1X"
+
+# Generate 50,000 Guest users on SSID 2
+user-generator.py -c 50000 -o guests.csv --type Guest --ssid 2
+
+# Generate 10,000 Client VPN users
+user-generator.py -c 10000 -o vpn-users.csv --type "Client VPN"
 ```
 
 ### `mac-generator.py`

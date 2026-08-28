@@ -1,0 +1,10 @@
+MAC address,Endpoint device group,Description
+00:0a:95:9d:68:16,Android,Android device
+10:0c:95:9d:68:4e,Guest,New device
+10:0a:95:9d:68:50,Guest;Android,New device
+01:0a:95:9d:68:16,Meraki,Internal
+01:0a:95:9d:68:17,Meraki,Internal
+01:0a:95:9d:68:18,Meraki,Internal
+11:0a:95:9d:68:16,Cisco;Meraki,Test device
+11:0a:95:9d:68:17,Cisco;Meraki,Test device
+11:0a:95:9d:68:18,Cisco;Meraki,Test device
