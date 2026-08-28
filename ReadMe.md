@@ -89,6 +89,9 @@ Backup all CAM data from multiple API endpoints to date-stamped JSON files. Crea
 # Backup to ./backups/2026-06-12/
 cam-backup.py
 
+# Override the organization for this run
+cam-backup.py --org 123456
+
 # Backup to specific directory
 cam-backup.py --dir /data
 
