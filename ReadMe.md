@@ -1,5 +1,61 @@
 # Cisco Access Manager (CAM) Scripts and Automations
 
+## Setup
+
+### 1. Install `uv`
+
+These scripts use [PEP 723](https://peps.python.org/pep-0723/) inline dependency metadata and run directly via `uv` — no virtualenv or `pip install` needed.
+
+```sh
+# macOS
+brew install uv
+# Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Verify
+uv --version
+```
+
+### 2. Get your Meraki Dashboard API key
+
+1. Sign in to the [Meraki Dashboard](https://dashboard.meraki.com/).
+2. Enable API access for your organization: **Organization > Settings > Dashboard API access** (toggle "Enable access to the Cisco Meraki Dashboard API").
+3. Generate a key under your profile: click your name (top right) > **My profile** > **API access** > **Generate new API key**.
+4. Copy the key immediately — Meraki only shows it once. Treat it like a password; it grants full access to everything your account can see.
+
+### 3. Find your Organization ID
+
+```sh
+curl -s -L -H "Authorization: Bearer $MERAKI_DASHBOARD_API_KEY" \
+  https://api.meraki.com/api/v1/organizations | jq '.[] | {id, name}'
+```
+
+Or find it in the dashboard URL when viewing an organization (`.../o/<ORG_ID>/...`).
+
+### 4. Configure environment variables
+
+Copy the example file and fill in your values:
+
+```sh
+cp .env.example.txt .env
+```
+
+```sh
+# .env
+MERAKI_DASHBOARD_API_KEY=your_api_key_here
+MERAKI_ORG_ID=your_org_id_here
+```
+
+`.env` is loaded automatically via `python-dotenv` and is gitignored — never commit it.
+
+### 5. Run a script
+
+Scripts are executable and self-install their own dependencies on first run:
+
+```sh
+./cam-clients.py -v
+```
+
 ## Updates
 
 If you want to update these scripts or vibe-code your own, you should download the latest Meraki Dashboard OpenAPI Specification from your dashboard and save it to the `references/` folder:
