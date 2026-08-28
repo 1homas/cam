@@ -23,12 +23,13 @@ Fetches every network in `MERAKI_ORG_ID`, then asynchronously fetches clients fr
 - `uv` package manager
 - Environment variables:
   - `MERAKI_DASHBOARD_API_KEY` - Your Meraki Dashboard API key (required)
-  - `MERAKI_ORG_ID` - Organization ID (required)
+  - `MERAKI_ORG_ID` - Organization ID (required unless `--org` is passed)
 
 ## Options
 
 | Flag          | Type    | Default   | Description                                                               |
 | ------------- | ------- | --------- | ------------------------------------------------------------------------- |
+| --org, -o     | string  | (none)    | Organization ID (overrides `MERAKI_ORG_ID`)                               |
 | --network, -n | string  | (none)    | Limit download to a single network ID                                     |
 | --format      | choice  | `csv`     | Output format: `csv`, `json`, `yaml`, or `table` (Markdown)               |
 | --filter, -f  | string  | (none)    | Filter by key=value (repeatable, dot notation, case-insensitive contains) |
@@ -47,6 +48,9 @@ cam-network-clients.py > all-clients.csv
 
 # Export as JSON
 cam-network-clients.py --format json
+
+# Override the organization for this run
+cam-network-clients.py --org 123456
 
 # Limit to a single network
 cam-network-clients.py -n N_123456789
@@ -151,7 +155,8 @@ Filters use case-insensitive substring matching with dot notation for nested fie
 
 ## Behavior
 
-- **Networks**: By default, fetches all networks in `MERAKI_ORG_ID`; use `--network` to limit to one network
+- **Organization**: By default, uses `MERAKI_ORG_ID`; use `--org`/`-o` to override it for a single run
+- **Networks**: By default, fetches all networks in the organization; use `--network` to limit to one network
 - **Batch size**: Controls number of clients per API request (default: 1000); configurable via `--batch` (range: 3-5000)
 - **Limit**: Optionally cap per-network results with `--limit` (0 = no limit)
 - **Filtering**: Applied client-side after fetching all records; multiple filters combine with AND logic; matching is case-insensitive substring (contains)

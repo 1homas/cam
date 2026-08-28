@@ -152,6 +152,9 @@ cam-network-clients.py > all-clients.csv
 # Export as JSON
 cam-network-clients.py --format json
 
+# Override the organization for this run
+cam-network-clients.py --org 123456
+
 # Limit to a single network
 cam-network-clients.py -n N_123456789
 

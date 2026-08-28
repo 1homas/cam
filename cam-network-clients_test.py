@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from click.testing import CliRunner
 
 spec = importlib.util.spec_from_file_location("cam_network_clients", Path(__file__).parent / "cam-network-clients.py")
 mod = importlib.util.module_from_spec(spec)
@@ -351,6 +352,40 @@ class TestFetchNetworkClientsBounded:
             semaphore, mock_client, {"id": "N_1", "name": "HQ"}, mod.MAX_TIMESPAN, 1000, 0
         )
         assert result == []
+
+
+class TestOrgOption:
+    def test_dash_o_flag_overrides_env(self, monkeypatch):
+        monkeypatch.setenv("MERAKI_DASHBOARD_API_KEY", "key123")
+        monkeypatch.setenv("MERAKI_ORG_ID", "env_org")
+        captured = {}
+
+        async def fake_run(org_id, network_id, fmt, filters, timespan, batch_size, limit, concurrency):
+            captured["org_id"] = org_id
+
+        monkeypatch.setattr(mod, "run", fake_run)
+        result = CliRunner().invoke(mod.main, ["-o", "flag_org", "--limit", "1"])
+        assert result.exit_code == 0
+        assert captured["org_id"] == "flag_org"
+
+    def test_falls_back_to_env_var(self, monkeypatch):
+        monkeypatch.setenv("MERAKI_DASHBOARD_API_KEY", "key123")
+        monkeypatch.setenv("MERAKI_ORG_ID", "env_org")
+        captured = {}
+
+        async def fake_run(org_id, network_id, fmt, filters, timespan, batch_size, limit, concurrency):
+            captured["org_id"] = org_id
+
+        monkeypatch.setattr(mod, "run", fake_run)
+        result = CliRunner().invoke(mod.main, [])
+        assert result.exit_code == 0
+        assert captured["org_id"] == "env_org"
+
+    def test_errors_without_org_id(self, monkeypatch):
+        monkeypatch.setenv("MERAKI_DASHBOARD_API_KEY", "key123")
+        monkeypatch.delenv("MERAKI_ORG_ID", raising=False)
+        result = CliRunner().invoke(mod.main, [])
+        assert result.exit_code != 0
 
 
 if __name__ == "__main__":

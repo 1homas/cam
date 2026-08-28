@@ -18,11 +18,12 @@ YAML, or Markdown table format. Supports filtering by any attribute using
 --filter key=value (repeatable, dot notation for nested fields).
 
 Usage:
-    cam-network-clients.py [--format csv|json|yaml|table] [--filter key=value]... [-v]
+    cam-network-clients.py [--org ORG_ID] [--format csv|json|yaml|table] [--filter key=value]... [-v]
 
 Examples:
     cam-network-clients.py                          # All clients, all networks, CSV
     cam-network-clients.py > all-clients.csv        # Download all clients as CSV (default)
+    cam-network-clients.py --org 123456              # Override MERAKI_ORG_ID
     cam-network-clients.py --format json            # Export as JSON
     cam-network-clients.py -n N_123456789            # Single network only
     cam-network-clients.py --concurrency 10          # Fetch 10 networks at once
@@ -316,6 +317,7 @@ FORMATTERS = {
 
 
 async def run(
+    org_id: Optional[str],
     network_id: Optional[str],
     fmt: str,
     filters: list[tuple[str, str]],
@@ -326,13 +328,12 @@ async def run(
 ) -> None:
     """Main download workflow."""
     api_key = os.getenv("MERAKI_DASHBOARD_API_KEY")
-    org_id = os.getenv("MERAKI_ORG_ID")
 
     if not api_key:
         logger.error("MERAKI_DASHBOARD_API_KEY not set")
         sys.exit(1)
     if not org_id:
-        logger.error("MERAKI_ORG_ID not set")
+        logger.error("Organization ID required (--org or MERAKI_ORG_ID)")
         sys.exit(1)
 
     async with httpx.AsyncClient(
@@ -377,6 +378,7 @@ def parse_filter(value: str) -> tuple[str, str]:
 
 
 @click.command()
+@click.option("--org", "-o", "org_id", envvar="MERAKI_ORG_ID", help="Organization ID (or set MERAKI_ORG_ID)")
 @click.option("--network", "-n", "network_id", default=None, help="Network ID (optional - limits download to a single network)")
 @click.option("--format", "fmt", default="csv", type=click.Choice(["csv", "json", "yaml", "table"]), help="Output format (default: csv)")
 @click.option("--filter", "-f", "filters", multiple=True, help="Filter by key=value (repeatable, supports dot notation)")
@@ -386,6 +388,7 @@ def parse_filter(value: str) -> tuple[str, str]:
 @click.option("--concurrency", "concurrency", default=5, type=int, help="Number of networks to fetch concurrently (default: 5)")
 @click.option("-v", "--verbose", is_flag=True, default=False, help="Enable verbose logging")
 def main(
+    org_id: Optional[str],
     network_id: Optional[str],
     fmt: str,
     filters: tuple[str, ...],
@@ -399,7 +402,8 @@ def main(
 
     By default, asynchronously fetches clients from every network in
     MERAKI_ORG_ID (bounded by --concurrency) and combines them into a
-    single export. Use --network to limit the download to one network.
+    single export. Use --org to override the organization and --network
+    to limit the download to one network.
     """
     if batch_size < 3 or batch_size > 5000:
         logger.error("--batch must be between 3 and 5000")
@@ -414,7 +418,7 @@ def main(
     if verbose:
         logger.setLevel(logging.INFO)
     parsed_filters = [parse_filter(f) for f in filters]
-    asyncio.run(run(network_id, fmt, parsed_filters, timespan, batch_size, limit, concurrency))
+    asyncio.run(run(org_id, network_id, fmt, parsed_filters, timespan, batch_size, limit, concurrency))
 
 
 if __name__ == "__main__":
