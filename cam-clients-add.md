@@ -45,6 +45,9 @@ cam-clients-add.py --file clients.csv --debug
 # Verbose logging
 cam-clients-add.py --file clients.csv -v
 
+# Custom timeout (for slow networks or large uploads)
+cam-clients-add.py --file clients.csv --timeout 120
+
 # Show help
 cam-clients-add.py --help
 ```
@@ -94,6 +97,7 @@ MAC address,Endpoint device group,Description
 - `--no-update-clients` - Do not update existing clients
 - `--create-groups` - Create new client groups if specified in CSV (default: false)
 - `--format [json|yaml|summary]` - Output format (default: summary)
+- `--timeout FLOAT` - HTTP request timeout in seconds (default: 60.0)
 - `-v, --verbose` - Enable verbose logging
 - `--debug` - Show debug details (CSV content, payload)
 
@@ -134,7 +138,7 @@ Required variables in `.env`:
 - **Endpoint**: `POST /organizations/{organizationId}/nac/clients/bulkUpload`
 - **Request Body**: JSON with base64-encoded CSV content
 - **Rate Limiting**: Automatic retry with Retry-After header
-- **Timeout**: 60 seconds
+- **Timeout**: 60 seconds (default, configurable via `--timeout`)
 
 ## Validation
 

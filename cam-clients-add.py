@@ -46,6 +46,7 @@ import io
 import json
 import logging
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -71,6 +72,27 @@ if not logger.handlers:
 
 BASE_URL = "https://api.meraki.com/api/v1"
 DEFAULT_BATCH_SIZE = 1000  # Maximum clients per batch
+
+
+def run_main(coro) -> None:
+    """Run the top-level coroutine with graceful Ctrl+C / SIGINT / SIGTERM shutdown."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    def _shutdown(*_args):
+        for task in asyncio.all_tasks(loop):
+            task.cancel()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, _shutdown)
+
+    try:
+        loop.run_until_complete(coro)
+    except asyncio.CancelledError:
+        logger.warning("Interrupted, shutting down...")
+        sys.exit(130)
+    finally:
+        loop.close()
 
 
 def split_csv_into_batches(csv_content: str, batch_size: int) -> list[str]:
@@ -239,6 +261,7 @@ async def run(
     csv_file: str | None,
     debug: bool = False,
     batch_size: int | None = None,
+    timeout: float = 60.0,
 ) -> None:
     """Main workflow to upload clients."""
     api_key = os.getenv("MERAKI_DASHBOARD_API_KEY")
@@ -294,7 +317,7 @@ async def run(
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
-        timeout=httpx.Timeout(120.0),
+        timeout=httpx.Timeout(timeout),
     ) as client:
         all_results = []
         total_success = 0
@@ -399,6 +422,12 @@ async def run(
     default=None,
     help=f"Split large CSVs into batches (default: {DEFAULT_BATCH_SIZE} for files with >1000 rows)",
 )
+@click.option(
+    "--timeout",
+    type=float,
+    default=60.0,
+    help="HTTP request timeout in seconds (default: 60.0)",
+)
 def main(
     base64_csv: str | None,
     csv_file: str | None,
@@ -408,6 +437,7 @@ def main(
     verbose: bool,
     debug: bool,
     batch_size: int | None,
+    timeout: float,
 ) -> None:
     """Bulk add NAC clients from a base64-encoded CSV file.
 
@@ -461,7 +491,7 @@ def main(
                 batch_size = DEFAULT_BATCH_SIZE
                 logger.info(f"Auto-enabling batching (file has {line_count - 1} rows)")
 
-    asyncio.run(run(base64_csv or "", update_clients, create_groups, fmt, csv_file, debug, batch_size))
+    run_main(run(base64_csv or "", update_clients, create_groups, fmt, csv_file, debug, batch_size, timeout))
 
 
 if __name__ == "__main__":
