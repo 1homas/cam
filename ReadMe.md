@@ -101,9 +101,9 @@ cam-backup.py -v
 
 ### `cam-clients.py`
 
-Export NAC clients from CAM with filtering and pagination. Supports filtering by any attribute using repeatable `--filter key=value` with dot notation for nested fields (case-insensitive substring/contains matching). Configure batch size and limits for flexible data retrieval.
+Search, create, update, and delete NAC clients in CAM. With no CRUD flag given, the default action is to search/export all clients — supports filtering by any attribute using repeatable `--filter key=value` with dot notation for nested fields (case-insensitive substring/contains matching), plus pagination via `--batch`/`--limit`.
 
-**Features**: Offset-based pagination fetches all clients. Use `--batch` to control request size (default: 1000) and `--limit` to cap results.
+**Features**: Offset-based pagination fetches all clients for search. `--create`/`--update` accept a CSV file or inline JSON for one client, run in parallel (`--workers`). `--delete`/`--delete-id` use the batched `bulkDelete` API.
 
 ```sh
 # Export all clients as JSON (default batch size: 1000)
@@ -138,6 +138,42 @@ cam-clients.py -f owner=jsmith -f ssid=Corp --format table
 
 # Combine limit with filters for targeted preview
 cam-clients.py --limit 25 --filter ssid=Guest --format table
+
+# Create clients from CSV or inline JSON
+cam-clients.py --create clients.csv
+cam-clients.py --create '{"mac": "AA:BB:CC:DD:EE:FF", "description": "Printer"}'
+
+# Update clients from CSV or inline JSON (requires 'id')
+cam-clients.py --update updates.csv
+cam-clients.py --update '{"id": "627126248111374692", "description": "Reassigned"}'
+
+# Delete clients from CSV or inline JSON, or by a single ID
+cam-clients.py --delete deletes.csv
+cam-clients.py --delete-id 627126248111374692
+```
+
+### `cam-clients-groups.py`
+
+Search, create, update, and delete NAC client groups in CAM. Follows the same CSV/JSON CRUD pattern as `cam-clients.py` and `cam-users.py`.
+
+**Features**: `--search` supports fuzzy `--search-query`, sorting, and pagination. `--create`/`--update`/`--delete` accept a CSV file or inline JSON for one group, run in parallel (`--workers`). `members`/`membersAdd`/`membersRemove` accept semicolon-separated client IDs.
+
+```sh
+# Search/list groups
+cam-clients-groups.py --search
+cam-clients-groups.py --search --search-query Camera --format table
+
+# Create groups from CSV or inline JSON
+cam-clients-groups.py --create groups.csv
+cam-clients-groups.py --create '{"name": "Cameras", "description": "Security cameras"}'
+
+# Update groups from CSV or inline JSON (requires 'id')
+cam-clients-groups.py --update updates.csv
+cam-clients-groups.py --update '{"id": "627126248111341608", "membersAdd": "1;2;3"}'
+
+# Delete groups from CSV or inline JSON, or by a single ID
+cam-clients-groups.py --delete deletes.csv -w 20
+cam-clients-groups.py --delete-id 627126248111341608
 ```
 
 ### `cam-network-clients.py`
@@ -245,79 +281,19 @@ cam-clients-delete.py --groups-only
 cam-clients-delete.py --limit 5000
 ```
 
-### `cam-users.py`
+### `cam-users-generator.py`
 
-Export Meraki Auth Users (local authentication users) from Meraki networks. **By default, fetches users from ALL networks in the organization.** Fetches 802.1X, Guest, and Client VPN users with filtering and pagination. Supports filtering by any attribute using repeatable `--filter key=value` with dot notation for nested fields.
-
-**Features**: Link header pagination fetches all users. Use `--batch` to control request size (default: 100) and `--limit` to cap results per network. Each user includes `_networkId` field for network context.
-
-```sh
-# Export all users from ALL networks (default)
-cam-users.py
-
-# Export all users to CSV
-cam-users.py --format csv > all-users.csv
-
-# Export users from a specific network only
-cam-users.py --network N_123456789
-
-# Export first 50 users per network for quick preview
-cam-users.py --limit 50 --format table
-
-# Export all Guest users to CSV (across all networks)
-cam-users.py --filter accountType=Guest --format csv > guests.csv
-
-# Find all 802.1X users in a specific network
-cam-users.py -n N_123 --filter accountType=802.1X --format table
-
-# Find users by email domain (all networks)
-cam-users.py --filter email=@example.com
-
-# Find expiring guest accounts across all networks
-cam-users.py --filter accountType=Guest -f authorizations.0.expiresAt=2026-12
-
-# Export in different formats with verbose logging
-cam-users.py --format yaml -v
-cam-users.py -n N_123 --format table -v
-```
-
-### `cam-users-add.py`
-
-Bulk import Meraki Auth Users from CSV file. Imports local authentication users (802.1X, Guest, Client VPN) with parallel uploads, automatic batching, and validation. Designed for scale with support for millions of users.
-
-**Features**: Pre-flight validation, parallel uploads (configurable workers), automatic chunking, rate limit handling, progress reporting.
-
-```sh
-# Import users from CSV
-cam-users-add.py --network N_123456789 --file users.csv
-
-# Import with more workers for faster processing
-cam-users-add.py -n N_123 -f users.csv --workers 20 -v
-
-# Import a million users with high concurrency
-cam-users-add.py -n N_123 -f million-users.csv --workers 50 --timeout 60 -v
-
-# Generate test data first
-user-generator.py --count 100000 --output test-100k.csv
-cam-users-add.py -n N_123 -f test-100k.csv -w 20
-```
-
-### `user-generator.py`
-
-Generate CSV files with N Meraki Auth Users for bulk import testing. Creates test data for validating cam-users-add.py at scale.
+Generate CSV files with N Meraki IAM (IdP) users (columns: `email`, `displayName`, `password`, `sendPassword`) for load-testing `cam-users.py --create`.
 
 ```sh
 # Generate 1,000,000 users (~150 MB CSV)
-user-generator.py --count 1000000 --output million-users.csv
+cam-users-generator.py --count 1000000 --output million-users.csv
 
-# Generate 100,000 802.1X users
-user-generator.py -c 100000 -o users-100k.csv --type "802.1X"
+# Generate 100,000 users
+cam-users-generator.py -c 100000 -o users-100k.csv
 
-# Generate 50,000 Guest users on SSID 2
-user-generator.py -c 50000 -o guests.csv --type Guest --ssid 2
-
-# Generate 10,000 Client VPN users
-user-generator.py -c 10000 -o vpn-users.csv --type "Client VPN"
+# Generate 10,000 users with sendPassword=true
+cam-users-generator.py -c 10000 -o users-10k.csv --send-password
 ```
 
 ### `mac-generator.py`
