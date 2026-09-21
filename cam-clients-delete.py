@@ -579,7 +579,7 @@ async def run(dry_run: bool, clients_only: bool, groups_only: bool, batch_size: 
 @click.option("--batch", "batch_size", type=int, default=1000, help="Number of clients to fetch per API request (default: 1000, max: 1000)")
 @click.option("--limit", type=int, default=None, help="Maximum total clients to fetch (default: no limit)")
 @click.option("--timeout", type=float, default=60.0, help="Timeout in seconds for bulk delete requests (default: 60)")
-@click.option("--workers", type=int, default=4, help="Number of parallel workers (1 fetch + N-1 delete, default: 4)")
+@click.option("--workers", type=click.IntRange(1, 10), default=1, help="Number of parallel workers (1 fetch + N-1 delete), 1-10 (default: 1)")
 @click.option("-v", "--verbose", is_flag=True, default=False, help="Enable verbose logging")
 @click.option("--debug", is_flag=True, default=False, help="Enable debug logging")
 def main(clients_only: bool, groups_only: bool, dry_run: bool, batch_size: int, limit: Optional[int], timeout: float, workers: int, verbose: bool, debug: bool) -> None:
@@ -605,10 +605,6 @@ def main(clients_only: bool, groups_only: bool, dry_run: bool, batch_size: int, 
 
     if timeout <= 0:
         logger.error("--timeout must be greater than 0")
-        sys.exit(1)
-
-    if workers < 1:
-        logger.error("--workers must be at least 1")
         sys.exit(1)
 
     if debug:

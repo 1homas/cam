@@ -284,7 +284,8 @@ The continuous pipeline architecture provides optimal performance:
 
 **Performance guidelines**:
 
-- 4 workers (default): Good for most use cases
+- 1 worker (default): Safest, sequential fetch/delete
+- 4 workers: Good for most use cases
 - 8 workers: 2x faster for large deletions
 - 16+ workers: Maximum performance, but may hit API rate limits
 
