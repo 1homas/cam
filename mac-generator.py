@@ -37,6 +37,7 @@ Examples:
 
 import argparse
 import random
+import signal
 import sys
 
 
@@ -115,5 +116,14 @@ def main():
         sys.exit(1)
 
 
+def _sigterm_to_keyboard_interrupt(*_args):
+    raise KeyboardInterrupt
+
+
 if __name__ == "__main__":
-    main()
+    signal.signal(signal.SIGTERM, _sigterm_to_keyboard_interrupt)
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nInterrupted, shutting down...", file=sys.stderr)
+        sys.exit(130)

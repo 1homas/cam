@@ -27,6 +27,7 @@ import asyncio
 import logging
 import os
 import re
+import signal
 import sys
 import time
 from datetime import datetime, timezone
@@ -49,6 +50,27 @@ if not logger.handlers:
 
 BASE_URL = "https://api.meraki.com/api/v1"
 DEFAULT_AGE = "7d"
+
+
+def run_main(coro) -> None:
+    """Run the top-level coroutine with graceful Ctrl+C / SIGINT / SIGTERM shutdown."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    def _shutdown(*_args):
+        for task in asyncio.all_tasks(loop):
+            task.cancel()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, _shutdown)
+
+    try:
+        loop.run_until_complete(coro)
+    except asyncio.CancelledError:
+        logger.warning("Interrupted, shutting down...")
+        sys.exit(130)
+    finally:
+        loop.close()
 AGE_PATTERN = re.compile(r"(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$")
 
 
@@ -223,7 +245,7 @@ def main(age: str, ssid: str, dry_run: bool, verbose: bool) -> None:
     """Purge stale Guest clients from Cisco Access Manager."""
     if verbose or dry_run:
         logger.setLevel(logging.INFO)
-    asyncio.run(run(age, dry_run, ssid))
+    run_main(run(age, dry_run, ssid))
 
 
 if __name__ == "__main__":

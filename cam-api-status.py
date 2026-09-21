@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -334,5 +335,14 @@ def main() -> None:
     print_statuses(statuses)
 
 
+def _sigterm_to_keyboard_interrupt(*_args):
+    raise KeyboardInterrupt
+
+
 if __name__ == "__main__":
-    main()
+    signal.signal(signal.SIGTERM, _sigterm_to_keyboard_interrupt)
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nInterrupted, shutting down...", file=sys.stderr)
+        sys.exit(130)

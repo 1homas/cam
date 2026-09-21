@@ -27,6 +27,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -47,6 +48,27 @@ if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ"))
     logger.addHandler(handler)
+
+
+def run_main(coro) -> None:
+    """Run the top-level coroutine with graceful Ctrl+C / SIGINT / SIGTERM shutdown."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    def _shutdown(*_args):
+        for task in asyncio.all_tasks(loop):
+            task.cancel()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, _shutdown)
+
+    try:
+        loop.run_until_complete(coro)
+    except asyncio.CancelledError:
+        logger.warning("Interrupted, shutting down...")
+        sys.exit(130)
+    finally:
+        loop.close()
 
 BASE_URL = "https://api.meraki.com/api/v1"
 
@@ -334,7 +356,7 @@ def main(org_id: Optional[str], backup_dir: str, verbose: bool) -> None:
     """
     if verbose:
         logger.setLevel(logging.INFO)
-    asyncio.run(run(org_id, backup_dir))
+    run_main(run(org_id, backup_dir))
 
 
 if __name__ == "__main__":
