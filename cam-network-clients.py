@@ -14,17 +14,18 @@ Download all clients from all networks in a Meraki organization.
 Fetches every network in the organization, then asynchronously fetches
 clients from each network (GET /networks/{networkId}/clients) using the
 Meraki Dashboard API. Exports the combined results in CSV (default), JSON,
-YAML, or Markdown table format. Supports filtering by any attribute using
---filter key=value (repeatable, dot notation for nested fields).
+JSONL, YAML, or Markdown table format. Supports filtering by any attribute
+using --filter key=value (repeatable, dot notation for nested fields).
 
 Usage:
-    cam-network-clients.py [--org ORG_ID] [--format csv|json|yaml|table] [--filter key=value]... [-v]
+    cam-network-clients.py [--org ORG_ID] [--format csv|json|jsonl|yaml|table] [--filter key=value]... [-v]
 
 Examples:
     cam-network-clients.py                          # All clients, all networks, CSV
     cam-network-clients.py > all-clients.csv        # Download all clients as CSV (default)
     cam-network-clients.py --org 123456              # Override MERAKI_ORG_ID
     cam-network-clients.py --format json            # Export as JSON
+    cam-network-clients.py --format jsonl           # Export as JSON Lines
     cam-network-clients.py -n N_123456789            # Single network only
     cam-network-clients.py --concurrency 10          # Fetch 10 networks at once
     cam-network-clients.py --timespan 86400          # Clients seen in the last day
@@ -40,6 +41,7 @@ import io
 import json
 import logging
 import os
+import signal
 import sys
 import time
 from typing import Optional
@@ -62,6 +64,27 @@ if not logger.handlers:
 
 BASE_URL = "https://api.meraki.com/api/v1"
 MAX_TIMESPAN = 2678400  # 31 days, the Meraki API maximum
+
+
+def run_main(coro) -> None:
+    """Run the top-level coroutine with graceful Ctrl+C / SIGINT / SIGTERM shutdown."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    def _shutdown(*_args):
+        for task in asyncio.all_tasks(loop):
+            task.cancel()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, _shutdown)
+
+    try:
+        loop.run_until_complete(coro)
+    except asyncio.CancelledError:
+        logger.warning("Interrupted, shutting down...")
+        sys.exit(130)
+    finally:
+        loop.close()
 
 # (header, field path) pairs. Leads with MAC address / Endpoint device group /
 # Description to match the CAM CSV template convention (references/csv/*.csv);
@@ -275,6 +298,11 @@ def format_json(clients: list[dict]) -> str:
     return json.dumps(clients, indent=2, default=str)
 
 
+def format_jsonl(clients: list[dict]) -> str:
+    """Format clients as JSON Lines (one compact JSON object per line)."""
+    return "\n".join(json.dumps(c, default=str) for c in clients)
+
+
 def format_yaml(clients: list[dict]) -> str:
     """Format clients as YAML."""
     return yaml.dump(clients, default_flow_style=False, sort_keys=False)
@@ -311,6 +339,7 @@ def format_table(clients: list[dict]) -> str:
 FORMATTERS = {
     "csv": format_csv,
     "json": format_json,
+    "jsonl": format_jsonl,
     "yaml": format_yaml,
     "table": format_table,
 }
@@ -380,7 +409,7 @@ def parse_filter(value: str) -> tuple[str, str]:
 @click.command()
 @click.option("--org", "-o", "org_id", envvar="MERAKI_ORG_ID", help="Organization ID (or set MERAKI_ORG_ID)")
 @click.option("--network", "-n", "network_id", default=None, help="Network ID (optional - limits download to a single network)")
-@click.option("--format", "fmt", default="csv", type=click.Choice(["csv", "json", "yaml", "table"]), help="Output format (default: csv)")
+@click.option("--format", "fmt", default="csv", type=click.Choice(["csv", "json", "jsonl", "yaml", "table"]), help="Output format (default: csv)")
 @click.option("--filter", "-f", "filters", multiple=True, help="Filter by key=value (repeatable, supports dot notation)")
 @click.option("--timespan", "timespan", default=MAX_TIMESPAN, type=float, help=f"Lookback window in seconds (default: {MAX_TIMESPAN} / 31 days, the API max)")
 @click.option("--batch", "batch_size", default=1000, type=int, help="Batch size per API request (default: 1000, max: 5000)")
@@ -398,13 +427,7 @@ def main(
     concurrency: int,
     verbose: bool,
 ) -> None:
-    """Download all clients from all networks in a Meraki organization.
 
-    By default, asynchronously fetches clients from every network in
-    MERAKI_ORG_ID (bounded by --concurrency) and combines them into a
-    single export. Use --org to override the organization and --network
-    to limit the download to one network.
-    """
     if batch_size < 3 or batch_size > 5000:
         logger.error("--batch must be between 3 and 5000")
         sys.exit(1)
@@ -418,7 +441,7 @@ def main(
     if verbose:
         logger.setLevel(logging.INFO)
     parsed_filters = [parse_filter(f) for f in filters]
-    asyncio.run(run(org_id, network_id, fmt, parsed_filters, timespan, batch_size, limit, concurrency))
+    run_main(run(org_id, network_id, fmt, parsed_filters, timespan, batch_size, limit, concurrency))
 
 
 if __name__ == "__main__":

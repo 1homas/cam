@@ -84,6 +84,24 @@ class TestFormatJson:
         assert parsed[0]["_networkId"] == "N_1"
 
 
+class TestFormatJsonl:
+    def test_outputs_one_json_object_per_line(self):
+        result = mod.format_jsonl(SAMPLE_CLIENTS)
+        lines = result.splitlines()
+        assert len(lines) == 3
+        for line in lines:
+            json.loads(line)
+
+    def test_jsonl_contains_all_fields(self):
+        result = mod.format_jsonl(SAMPLE_CLIENTS)
+        first = json.loads(result.splitlines()[0])
+        assert first["mac"] == "AA:BB:CC:DD:EE:01"
+        assert first["_networkId"] == "N_1"
+
+    def test_empty_list_returns_empty_string(self):
+        assert mod.format_jsonl([]) == ""
+
+
 class TestFormatYaml:
     def test_outputs_valid_yaml(self):
         import yaml

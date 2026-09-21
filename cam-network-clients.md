@@ -31,7 +31,7 @@ Fetches every network in `MERAKI_ORG_ID`, then asynchronously fetches clients fr
 | ------------- | ------- | --------- | ------------------------------------------------------------------------- |
 | --org, -o     | string  | (none)    | Organization ID (overrides `MERAKI_ORG_ID`)                               |
 | --network, -n | string  | (none)    | Limit download to a single network ID                                     |
-| --format      | choice  | `csv`     | Output format: `csv`, `json`, `yaml`, or `table` (Markdown)               |
+| --format      | choice  | `csv`     | Output format: `csv`, `json`, `jsonl`, `yaml`, or `table` (Markdown)      |
 | --filter, -f  | string  | (none)    | Filter by key=value (repeatable, dot notation, case-insensitive contains) |
 | --timespan    | float   | `2678400` | Lookback window in seconds (max: 2678400 / 31 days, the API max)          |
 | --batch       | integer | `1000`    | Batch size per API request (range: 3-5000)                                |
@@ -48,6 +48,9 @@ cam-network-clients.py > all-clients.csv
 
 # Export as JSON
 cam-network-clients.py --format json
+
+# Export as JSON Lines (one client per line)
+cam-network-clients.py --format jsonl > clients.jsonl
 
 # Override the organization for this run
 cam-network-clients.py --org 123456
@@ -99,6 +102,14 @@ The **Endpoint device group** column matches the CAM CSV template convention (`r
     "_networkName": "HQ"
   }
 ]
+```
+
+### JSONL
+
+Same fields as JSON, one compact JSON object per line (no enclosing array), for streaming/line-oriented tooling.
+
+```jsonl
+{"id": "k74272e", "mac": "22:33:44:55:66:77", "ip": "1.2.3.4", "description": "Miles's phone", "status": "Online", "manufacturer": "Apple", "os": "iOS", "usage": {"sent": 100.0, "recv": 200.0}, "_networkId": "N_123", "_networkName": "HQ"}
 ```
 
 ### YAML
