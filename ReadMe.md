@@ -281,6 +281,47 @@ cam-clients-delete.py --groups-only
 cam-clients-delete.py --limit 5000
 ```
 
+### `cam-users.py`
+
+Search, create, update, and delete Meraki IAM (IdP) users. Manages dashboard/IdP end users through the org-scoped `/organizations/{organizationId}/iam/users/idps/users` and `.../iam/users/search` APIs (documented fields are `email`, `displayName`, `password`, `sendPassword`; create also accepts undocumented `accountType` (defaults to `802.1X`), `upn`, and `groupIds` — not in the published OpenAPI spec but accepted by the live API — a different resource than the network-scoped Meraki Auth Users `merakiAuthUsers` with its own `accountType`/`authorizations`). **The live API's real minimum for `--create` is `email`, `upn`, `displayName`, and `password`** (12+ chars, no common words, 3 of upper/lower/number/symbol) — `upn` isn't in the published spec at all, and this script's own pre-flight validation only checks `email`, so a request missing the others passes locally and fails with a 400 from the API.
+
+**Features**: Search/list with filters (query, access type, group, IdP, status, user ID), sorting, and pagination; pre-flight validation; parallel operations (configurable workers); automatic chunking; rate limit handling; progress reporting. Create, update, and delete can be combined in a single invocation. `--create`/`--update` accept either a CSV file path or an inline JSON object for a single user; `--delete` additionally accepts a bare user ID with no CSV/JSON needed. There is no list endpoint on `idps/users` itself, so update/delete require an `id` — use `--search` to find one, or capture it from a prior create response. `--search` has no default IdP filter (returns users across all IdPs); `--idp-name`/`--idp-id` narrow it to one, e.g. `802.1X` for CAM's built-in local users store. `--delete` accepts no IdP field at all — deleted users are always removed from the native `802.1X` local users store. `--groups` searches/lists IdP groups (same `--query`/`--idp-name`/`--idp-id` filters) to discover group IDs for `--group-id` or the `groupIds` create field.
+
+```sh
+# Search/list users across all IdPs
+cam-users.py --search
+cam-users.py --search --query miles --format table
+cam-users.py --search --access-type Wireless --status Enabled --limit 50
+
+# Scope search to a specific IdP
+cam-users.py --search --idp-name "802.1X" --format table
+cam-users.py --search --idp-name "PseudoCo" --format table
+
+# Search/list IdP groups to find group IDs for --group-id / groupIds
+cam-users.py --groups --format table
+cam-users.py --groups --query finance --idp-name "PseudoCo" --format csv
+
+# Print a JSON template for --create
+cam-users.py --template > user.json
+
+# Create from CSV (columns: email, displayName, upn, password, sendPassword, accountType, groupIds) or inline JSON
+cam-users.py --create users.csv
+cam-users.py --create '{"email": "mm@meraki.com", "displayName": "Miles Meraki"}'
+cam-users.py --create '{"email": "mm@meraki.com", "upn": "mm@meraki.com", "groupIds": ["627126248111344153", "627126248111344152"]}'
+
+# Create with more workers for faster processing
+cam-users.py -o 123456 --create users.csv --workers 20 -v
+
+# Update from CSV (columns: id, displayName, email, password, sendPassword) or inline JSON
+cam-users.py --update updates.csv
+cam-users.py --update '{"id": "1284392014819", "displayName": "Miles Meraki"}'
+
+# Delete from CSV (column: id), inline JSON, or a bare user ID
+cam-users.py --delete deletes.csv -w 20
+cam-users.py --delete '{"id": "1284392014819"}'
+cam-users.py --delete 1284392014819
+```
+
 ### `cam-users-generator.py`
 
 Generate CSV files with N Meraki IAM (IdP) users (columns: `email`, `displayName`, `password`, `sendPassword`) for load-testing `cam-users.py --create`.
@@ -315,4 +356,14 @@ Generate random MAC addresses with optional OUI specification. Useful for creati
 
 # Generate MAC addresses with specific OUI in uppercase
 ./mac-generator.py -c 5 -o c0:ff:ee --upper
+```
+
+## cam-license-usage.py
+
+Generate the CAM license-usage rolling-window chart (daily peak concurrent sessions vs. rolling 10-day 90th percentile) from live Meraki Dashboard data, as either a self-contained interactive HTML page or a static SVG (default 1920x1080).
+
+```bash
+cam-license-usage.py
+cam-license-usage.py -f svg --width 1920 --height 1080
+cam-license-usage.py --org 123456 --days 90 -l 1500
 ```
