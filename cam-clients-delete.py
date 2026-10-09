@@ -43,6 +43,35 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 BASE_URL = "https://api.meraki.com/api/v1"
+MAX_BATCH_RETRIES = 5
+
+
+def backoff_delay(attempt: int) -> float:
+    """Exponential backoff delay for batch retries, capped at 30s."""
+    return min(2.0 * (2 ** attempt), 30.0)
+
+
+def resolve_delete_batch_size(batch_size: int, delete_batch_size: Optional[int]) -> int:
+    """--delete-batch overrides the bulkDelete chunk size; otherwise it follows --batch."""
+    return delete_batch_size if delete_batch_size is not None else batch_size
+
+
+def format_summary(elapsed: float, clients_deleted: int, clients_failed: int, groups_deleted: int, interrupted: bool) -> str:
+    """Format the end-of-run stats block, shown whether the run completed or was interrupted."""
+    rate = clients_deleted / elapsed if elapsed > 0 else 0.0
+    status = "INTERRUPTED" if interrupted else "COMPLETE"
+
+    lines = [
+        "",
+        "=" * 60,
+        f"Deletion {status} in {elapsed:.1f}s",
+        f"Clients deleted: {clients_deleted} ({rate:.1f}/s)",
+    ]
+    if clients_failed:
+        lines.append(f"Clients not deleted: {clients_failed}")
+    lines.append(f"Groups deleted: {groups_deleted}")
+    lines.append("=" * 60)
+    return "\n".join(lines)
 
 
 def parse_next_starting_after(link_header: str) -> Optional[str]:
@@ -323,6 +352,38 @@ async def fetch_worker(
     logger.info(f"Fetch complete - fetched {fetch_stats['fetched']} total clients")
 
 
+async def delete_batch_with_retries(
+    client: httpx.AsyncClient,
+    org_id: str,
+    batch: list[str],
+    timeout: float,
+    worker_id: int,
+    batch_num: int,
+) -> tuple[bool, int]:
+    """Delete one batch, retrying with backoff on failure. Never touches the queue.
+
+    Retrying locally (instead of pushing the failed batch back onto the shared
+    deletion queue) means retries never depend on queue space being free, so a
+    saturated queue during a run of upstream failures can't cause batches to be
+    dropped or workers to deadlock trying to re-queue.
+
+    Returns:
+        Tuple of (success, count) where count is clients deleted (0 on failure).
+    """
+    for attempt in range(MAX_BATCH_RETRIES):
+        success, count = await bulk_delete_clients(client, org_id, batch, timeout, worker_id, batch_num)
+        if success:
+            return True, count
+
+        if attempt + 1 < MAX_BATCH_RETRIES:
+            delay = backoff_delay(attempt)
+            logger.warning(f"🔁 Delete worker {worker_id}: Retrying batch {batch_num} in {delay:.0f}s (attempt {attempt + 2}/{MAX_BATCH_RETRIES})")
+            await asyncio.sleep(delay)
+
+    logger.error(f"❌ Delete worker {worker_id}: Batch {batch_num} failed after {MAX_BATCH_RETRIES} attempts, giving up on {len(batch)} clients")
+    return False, 0
+
+
 async def deletion_worker(
     worker_id: int,
     queue: asyncio.Queue,
@@ -332,19 +393,21 @@ async def deletion_worker(
     deleted_count: dict,
     batch_counter: dict,
     queue_client_count: dict,
+    failed_count: dict,
     batch_size: int = 1000,
 ) -> None:
     """Worker that processes deletion tasks from the queue.
 
     Args:
         worker_id: Worker identifier for logging
-        queue: Queue containing client IDs to delete
+        queue: Queue containing client ID lists to delete
         client: HTTP client
         org_id: Organization ID
         timeout: Request timeout in seconds
         deleted_count: Shared dictionary to track deletion progress
         batch_counter: Shared dictionary to track batch numbers
         queue_client_count: Shared dictionary to track clients in queue
+        failed_count: Shared dictionary to track permanently failed clients
         batch_size: Number of clients per deletion batch
     """
     while True:
@@ -368,27 +431,18 @@ async def deletion_worker(
             logger.info(f"🔄 Delete worker {worker_id}: Starting batch {batch_num} ({len(batch)} clients)")
 
             try:
-                success, count = await bulk_delete_clients(client, org_id, batch, timeout, worker_id, batch_num)
+                success, count = await delete_batch_with_retries(client, org_id, batch, timeout, worker_id, batch_num)
                 if success:
                     deleted_count['count'] += count
                     logger.info(f"✅ Delete worker {worker_id}: Deleted batch {batch_num} ({count} clients)")
                 else:
-                    # Re-queue failed batch for retry
-                    queue_client_count['count'] += len(batch)
-                    await queue.put(batch)
-                    logger.warning(f"🔁 Delete worker {worker_id}: Re-queued batch {batch_num} ({len(batch)} clients), {queue_client_count['count']} queued")
+                    failed_count['count'] += len(batch)
             except asyncio.CancelledError:
-                # Re-queue on cancellation
-                queue_client_count['count'] += len(batch)
-                await queue.put(batch)
-                logger.warning(f"⚠️ Delete worker {worker_id}: Cancelled batch {batch_num}, re-queued")
+                # Shutting down: don't retry, just count the rest of this chunk as unfinished
+                remaining = client_ids[i:]
+                failed_count['count'] += len(remaining)
+                logger.warning(f"⚠️ Delete worker {worker_id}: Cancelled at batch {batch_num}, {len(remaining)} clients not deleted")
                 raise
-            except Exception as e:
-                # Re-queue on exception
-                queue_client_count['count'] += len(batch)
-                await queue.put(batch)
-                error_msg = str(e) if str(e) else type(e).__name__
-                logger.warning(f"🔁 Delete worker {worker_id}: Exception in batch {batch_num}: {error_msg}, re-queued, {queue_client_count['count']} queued")
 
         queue.task_done()
 
@@ -397,10 +451,11 @@ async def delete_clients_parallel(
     client: httpx.AsyncClient,
     org_id: str,
     batch_size: int,
+    delete_batch_size: int,
     limit: Optional[int],
     timeout: float,
     workers: int,
-) -> tuple[int, int]:
+) -> tuple[int, int, int, bool]:
     """Delete clients using 1 fetch worker and N delete workers.
 
     One worker fetches all pages sequentially, while other workers delete concurrently.
@@ -409,22 +464,25 @@ async def delete_clients_parallel(
         client: HTTP client
         org_id: Organization ID
         batch_size: Number of clients to fetch per API request
+        delete_batch_size: Number of clients per bulkDelete request (smaller than
+            batch_size avoids upstream gateway 504s on large deletes)
         limit: Maximum total clients to fetch
         timeout: Request timeout in seconds
         workers: Total number of workers (1 fetch + N-1 delete)
 
     Returns:
-        Tuple of (clients_fetched, clients_deleted)
+        Tuple of (clients_fetched, clients_deleted, clients_failed, interrupted)
     """
     # Set max queue size to hold ~10000 clients worth of batches
     # This prevents memory issues with large datasets
-    max_clients_in_queue = 10000
+    max_clients_in_queue = 3000
     queue_maxsize = max(1, max_clients_in_queue // batch_size)
     logger.info(f"Queue maxsize: {queue_maxsize} batches (~{queue_maxsize * batch_size} clients max)")
 
     deletion_queue: asyncio.Queue = asyncio.Queue(maxsize=queue_maxsize)
     fetch_stats = {'fetched': 0}
     deleted_count = {'count': 0}
+    failed_count = {'count': 0}
     batch_counter = {'count': 1}  # Start batch numbering at 1
     queue_client_count = {'count': 0}  # Track total clients in queue
 
@@ -439,9 +497,11 @@ async def delete_clients_parallel(
 
     # Start deletion workers
     delete_tasks = [
-        asyncio.create_task(deletion_worker(i + 1, deletion_queue, client, org_id, timeout, deleted_count, batch_counter, queue_client_count))
+        asyncio.create_task(deletion_worker(i + 1, deletion_queue, client, org_id, timeout, deleted_count, batch_counter, queue_client_count, failed_count, delete_batch_size))
         for i in range(num_delete_workers)
     ]
+
+    interrupted = False
 
     try:
         # Wait for fetch to complete
@@ -453,6 +513,9 @@ async def delete_clients_parallel(
         logger.info(f"All deletions complete: {deleted_count['count']} clients deleted")
 
     except asyncio.CancelledError:
+        # Caught here (rather than re-raised) so the caller still gets back the
+        # fetched/deleted/failed counts for a final stats summary, even on Ctrl+C.
+        interrupted = True
         logger.warning("\n⚠️  Cancellation requested (Ctrl+C)")
         # Cancel fetch worker if still running
         if not fetch_task.done():
@@ -468,7 +531,6 @@ async def delete_clients_parallel(
                 task.cancel()
 
         logger.info(f"Shutting down gracefully: {deleted_count['count']}/{fetch_stats['fetched']} clients deleted")
-        raise
 
     finally:
         # Stop delete workers with poison pills
@@ -486,10 +548,10 @@ async def delete_clients_parallel(
 
         logger.info("All delete workers stopped")
 
-    return fetch_stats['fetched'], deleted_count['count']
+    return fetch_stats['fetched'], deleted_count['count'], failed_count['count'], interrupted
 
 
-async def run(dry_run: bool, clients_only: bool, groups_only: bool, batch_size: int, limit: Optional[int], timeout: float, workers: int) -> None:
+async def run(dry_run: bool, clients_only: bool, groups_only: bool, batch_size: int, delete_batch_size: int, limit: Optional[int], timeout: float, workers: int) -> None:
     """Main deletion workflow using continuous fetch-and-delete pipeline."""
     api_key = os.getenv("MERAKI_DASHBOARD_API_KEY")
     org_id = os.getenv("MERAKI_ORG_ID")
@@ -501,15 +563,17 @@ async def run(dry_run: bool, clients_only: bool, groups_only: bool, batch_size: 
         logger.error("MERAKI_ORG_ID not set")
         sys.exit(1)
 
+    overall_start = time.time()
+    total_clients_deleted = 0
+    total_clients_failed = 0
+    total_groups_deleted = 0
+    interrupted = False
+
     try:
         async with httpx.AsyncClient(
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             timeout=httpx.Timeout(30.0),
         ) as client:
-            overall_start = time.time()
-            total_clients_deleted = 0
-            total_groups_deleted = 0
-
             # Delete clients using continuous pipeline
             if not groups_only:
                 if dry_run:
@@ -525,13 +589,14 @@ async def run(dry_run: bool, clients_only: bool, groups_only: bool, batch_size: 
                 else:
                     # Use parallel fetch-and-delete pipeline (continuous until all fetched)
                     logger.info(f"Starting continuous pipeline with {workers} workers...")
-                    fetched, deleted = await delete_clients_parallel(client, org_id, batch_size, limit, timeout, workers)
+                    fetched, deleted, failed, interrupted = await delete_clients_parallel(client, org_id, batch_size, delete_batch_size, limit, timeout, workers)
 
                     total_clients_deleted = deleted
-                    logger.info(f"Pipeline complete: {deleted}/{fetched} clients deleted")
+                    total_clients_failed = failed
+                    logger.info(f"Pipeline {'interrupted' if interrupted else 'complete'}: {deleted}/{fetched} clients deleted ({failed} not deleted)")
 
-            # Delete groups
-            if not clients_only:
+            # Delete groups (skipped if the client deletion phase was interrupted)
+            if not clients_only and not interrupted:
                 all_groups = await fetch_all_groups(client, org_id)
                 logger.info(f"Total groups found: {len(all_groups)}")
 
@@ -541,35 +606,28 @@ async def run(dry_run: bool, clients_only: bool, groups_only: bool, batch_size: 
                             logger.info(f"  {g.get('name', 'N/A')} | id={g['id']}")
                         logger.info(f"Dry run: would delete {len(all_groups)} groups")
                     else:
-                        deleted = 0
                         for g in all_groups:
                             success = await delete_group(client, org_id, g["id"])
                             if success:
-                                deleted += 1
+                                total_groups_deleted += 1
                                 logger.info(f"✅ Deleted group: {g.get('name', 'N/A')}")
                             else:
                                 logger.error(f"❌ Failed to delete group: {g.get('name', 'N/A')}")
 
-                        total_groups_deleted = deleted
-                        logger.info(f"Groups deleted: {deleted}/{len(all_groups)}")
+                        logger.info(f"Groups deleted: {total_groups_deleted}/{len(all_groups)}")
                 else:
                     logger.info("No groups to delete")
 
-            overall_elapsed = time.time() - overall_start
-            logger.info(f"\n{'='*60}")
-            logger.info(f"All deletions complete in {overall_elapsed:.1f}s")
-            logger.info(f"Total clients deleted: {total_clients_deleted}")
-            logger.info(f"Total groups deleted: {total_groups_deleted}")
-            logger.info(f"{'='*60}")
-
     except asyncio.CancelledError:
-        logger.warning("\n⚠️  Interrupted by user (Ctrl+C)")
-        logger.info("Exiting gracefully...")
-        sys.exit(130)  # Standard exit code for SIGINT
+        interrupted = True
     except KeyboardInterrupt:
-        logger.warning("\n⚠️  Interrupted by user (Ctrl+C)")
-        logger.info("Exiting gracefully...")
-        sys.exit(130)
+        interrupted = True
+
+    overall_elapsed = time.time() - overall_start
+    logger.warning(format_summary(overall_elapsed, total_clients_deleted, total_clients_failed, total_groups_deleted, interrupted))
+
+    if interrupted:
+        sys.exit(130)  # Standard exit code for SIGINT
 
 
 @click.command()
@@ -577,12 +635,13 @@ async def run(dry_run: bool, clients_only: bool, groups_only: bool, batch_size: 
 @click.option("--groups-only", is_flag=True, default=False, help="Delete only groups, not clients")
 @click.option("--dry-run", is_flag=True, default=False, help="List items without deleting")
 @click.option("--batch", "batch_size", type=int, default=1000, help="Number of clients to fetch per API request (default: 1000, max: 1000)")
+@click.option("--delete-batch", "delete_batch_size", type=int, default=150, help="Number of clients per bulkDelete request (default: 150). Lower this if you see 504 upstream timeouts.")
 @click.option("--limit", type=int, default=None, help="Maximum total clients to fetch (default: no limit)")
 @click.option("--timeout", type=float, default=60.0, help="Timeout in seconds for bulk delete requests (default: 60)")
-@click.option("--workers", type=click.IntRange(1, 10), default=1, help="Number of parallel workers (1 fetch + N-1 delete), 1-10 (default: 1)")
+@click.option("--workers", type=click.IntRange(1, 10), default=3, help="Number of parallel workers (1 fetch + N-1 delete), 1-10 (default: 3)")
 @click.option("-v", "--verbose", is_flag=True, default=False, help="Enable verbose logging")
 @click.option("--debug", is_flag=True, default=False, help="Enable debug logging")
-def main(clients_only: bool, groups_only: bool, dry_run: bool, batch_size: int, limit: Optional[int], timeout: float, workers: int, verbose: bool, debug: bool) -> None:
+def main(clients_only: bool, groups_only: bool, dry_run: bool, batch_size: int, delete_batch_size: Optional[int], limit: Optional[int], timeout: float, workers: int, verbose: bool, debug: bool) -> None:
     """Delete all NAC clients and groups from Cisco Access Manager.
 
     Uses a continuous pipeline with 1 fetch worker and N-1 delete workers.
@@ -598,6 +657,12 @@ def main(clients_only: bool, groups_only: bool, dry_run: bool, batch_size: int, 
     if batch_size < 1 or batch_size > 1000:
         logger.error("--batch must be between 1 and 1000")
         sys.exit(1)
+
+    if delete_batch_size is not None and (delete_batch_size < 1 or delete_batch_size > 1000):
+        logger.error("--delete-batch must be between 1 and 1000")
+        sys.exit(1)
+
+    delete_batch_size = resolve_delete_batch_size(batch_size, delete_batch_size)
 
     if limit is not None and limit < 1:
         logger.error("--limit must be at least 1")
@@ -625,7 +690,7 @@ def main(clients_only: bool, groups_only: bool, dry_run: bool, batch_size: int, 
     signal.signal(signal.SIGTERM, signal_handler)
 
     try:
-        loop.run_until_complete(run(dry_run, clients_only, groups_only, batch_size, limit, timeout, workers))
+        loop.run_until_complete(run(dry_run, clients_only, groups_only, batch_size, delete_batch_size, limit, timeout, workers))
     except KeyboardInterrupt:
         pass
     finally:

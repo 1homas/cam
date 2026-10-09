@@ -143,7 +143,7 @@ cam-clients-delete.py --limit 1000
    - Performs no actual deletion
 
 4. **Worker Allocation**:
-   - Default: 4 workers (1 fetch + 3 delete)
+   - Default: 3 workers (1 fetch + 2 delete)
    - Minimum: 1 worker (fetch only, no concurrent delete)
    - Configurable via `--workers` flag
    - Always 1 fetch worker, remaining workers delete
@@ -165,6 +165,23 @@ cam-clients-delete.py --limit 1000
 - Continues processing on individual failures
 - Returns non-zero exit code for configuration errors
 - Warns when API limit is reached (shows total vs. fetched count)
+- `bulkDelete` batches that fail (e.g. upstream 504s) retry locally with exponential backoff (up to 5 attempts, capped at 30s) — retries never re-enter the shared queue, so a saturated queue can't deadlock workers or cause Ctrl+C to hang
+- `--delete-batch` (default 150) decouples the bulkDelete payload size from `--batch` (fetch page size); lower it further if you still see 504s on large orgs
+
+## Stats Summary
+
+A stats summary is always printed at the end of a run — on normal completion **and** on Ctrl+C/SIGTERM interruption — showing elapsed time, clients deleted, deletes/sec, clients not deleted (if any), and groups deleted:
+
+```
+============================================================
+Deletion INTERRUPTED in 36.1s
+Clients deleted: 2000 (55.5/s)
+Clients not deleted: 2000
+Groups deleted: 0
+============================================================
+```
+
+If the client-deletion phase is interrupted, group deletion is skipped so the run exits promptly; rerun the script to resume (already-deleted clients return 404 and are treated as success).
 
 ## Logging
 
