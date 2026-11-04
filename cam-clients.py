@@ -105,23 +105,44 @@ def run_main(coro) -> None:
 
 
 CSV_COLUMNS = [
-    "id",
-    "mac",
-    "owner",
-    "type",
-    "status",
-    "ssid",
-    "source",
-    "ipAddress",
-    "description",
-    "lastLogin.timestamp",
-    "lastLogin.location",
-    "firstLogin.timestamp",
-    "firstLogin.location",
-    "classification.type",
-    "classification.manufacturer",
-    "classification.model",
-    "classification.os",
+    ("id", "id"),
+    ("MAC address", "mac"),
+    ("Endpoint device group", "groups"),
+    ("Description", "description"),
+    ("IPSK", "ipsk"),
+    ("owner", "owner"),
+    ("type", "type"),
+    ("status", "status"),
+    ("ssid", "ssid"),
+    ("source", "source"),
+    ("ipAddress", "ipAddress"),
+    ("lastLogin.timestamp", "lastLogin.timestamp"),
+    ("lastLogin.location", "lastLogin.location"),
+    ("firstLogin.timestamp", "firstLogin.timestamp"),
+    ("firstLogin.location", "firstLogin.location"),
+    ("classification.type", "classification.type"),
+    ("classification.manufacturer", "classification.manufacturer"),
+    ("classification.model", "classification.model"),
+    ("classification.os", "classification.os"),
+    ("uuid", "uuid"),
+    ("userDetails", "userDetails"),
+    ("oui.company", "oui.company"),
+    ("nadName", "nadName"),
+    ("lanIpAddresses", "lanIpAddresses"),
+    ("ipv4", "ipv4"),
+    ("ipv6", "ipv6"),
+    ("authenticationType", "authenticationType"),
+    ("authorizationPolicy", "authorizationPolicy"),
+    ("authenticationPolicy", "authenticationPolicy"),
+    ("hasPrivateMac", "hasPrivateMac"),
+    ("lastLoginNetwork", "lastLoginNetwork"),
+    ("lastLoginNetworkDevice", "lastLoginNetworkDevice"),
+    ("lastLogin.node.id", "lastLogin.node.id"),
+    ("lastLogin.node.serial", "lastLogin.node.serial"),
+    ("lastLogin.node.type", "lastLogin.node.type"),
+    ("lastLogin.node.group.id", "lastLogin.node.group.id"),
+    ("lastLogin.node.group.localeName", "lastLogin.node.group.localeName"),
+    ("lastLogin.node.group.encryptedId", "lastLogin.node.group.encryptedId"),
 ]
 
 CREATE_REQUIRED_COLUMNS = ["mac"]
@@ -428,7 +449,49 @@ def _get_nested(obj: dict, dotted_key: str) -> str:
             current = current.get(part, "")
         else:
             return ""
-    return str(current) if current else ""
+    return "" if current in (None, "") else str(current)
+
+
+def _format_groups(client: dict) -> str:
+    """Flatten a client's groups into a semicolon-separated string of group display names."""
+    items = client.get("groups", {}).get("items", [])
+    return ";".join(g.get("display", "") for g in items if g.get("display"))
+
+
+def _format_user_details(client: dict) -> str:
+    """Flatten a client's userDetails into a semicolon-separated string of usernames."""
+    items = client.get("userDetails") or []
+    return ";".join(u.get("username", "") for u in items if u.get("username"))
+
+
+def _join_list(values) -> str:
+    """Join a list field (e.g. ipv4/ipv6) into a semicolon-separated string."""
+    if not values:
+        return ""
+    return ";".join(str(v) for v in values)
+
+
+def _format_lan_ip_addresses(client: dict) -> str:
+    """Flatten the unstructured lanIpAddresses object into a JSON string."""
+    value = client.get("lanIpAddresses")
+    return json.dumps(value, default=str) if value else ""
+
+
+_LIST_COLUMN_FORMATTERS = {
+    "groups": _format_groups,
+    "userDetails": _format_user_details,
+    "lanIpAddresses": _format_lan_ip_addresses,
+    "ipv4": lambda client: _join_list(client.get("ipv4")),
+    "ipv6": lambda client: _join_list(client.get("ipv6")),
+}
+
+
+def _get_column(client: dict, key: str) -> str:
+    """Resolve a CSV/table column value, special-casing fields that aren't a flat dotted path."""
+    formatter = _LIST_COLUMN_FORMATTERS.get(key)
+    if formatter:
+        return formatter(client)
+    return _get_nested(client, key)
 
 
 def format_json(clients: list[dict]) -> str:
@@ -452,9 +515,9 @@ def format_csv(clients: list[dict]) -> str:
         return ""
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(CSV_COLUMNS)
+    writer.writerow([header for header, _ in CSV_COLUMNS])
     for c in clients:
-        row = [_get_nested(c, col) for col in CSV_COLUMNS]
+        row = [_get_column(c, key) for _, key in CSV_COLUMNS]
         writer.writerow(row)
     return output.getvalue()
 
@@ -464,11 +527,11 @@ def format_table(clients: list[dict]) -> str:
     if not clients:
         return ""
     lines = [
-        "| " + " | ".join(CSV_COLUMNS) + " |",
+        "| " + " | ".join(header for header, _ in CSV_COLUMNS) + " |",
         "| " + " | ".join("---" for _ in CSV_COLUMNS) + " |",
     ]
     for c in clients:
-        row = [_get_nested(c, col) for col in CSV_COLUMNS]
+        row = [_get_column(c, key) for _, key in CSV_COLUMNS]
         lines.append("| " + " | ".join(row) + " |")
     return "\n".join(lines)
 

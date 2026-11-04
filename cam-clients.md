@@ -178,7 +178,21 @@ id
 
 ### Search Columns
 
-`id`, `mac`, `owner`, `type`, `status`, `ssid`, `source`, `ipAddress`, `description`, `lastLogin.timestamp`, `lastLogin.location`, `firstLogin.timestamp`, `firstLogin.location`, `classification.type`, `classification.manufacturer`, `classification.model`, `classification.os`
+`id`, `MAC address`, `Endpoint device group`, `Description`, `IPSK`, `owner`, `type`, `status`, `ssid`, `source`, `ipAddress`, `lastLogin.timestamp`, `lastLogin.location`, `firstLogin.timestamp`, `firstLogin.location`, `classification.type`, `classification.manufacturer`, `classification.model`, `classification.os`, `uuid`, `userDetails`, `oui.company`, `nadName`, `lanIpAddresses`, `ipv4`, `ipv6`, `authenticationType`, `authorizationPolicy`, `authenticationPolicy`, `hasPrivateMac`, `lastLoginNetwork`, `lastLoginNetworkDevice`, `lastLogin.node.id`, `lastLogin.node.serial`, `lastLogin.node.type`, `lastLogin.node.group.id`, `lastLogin.node.group.localeName`, `lastLogin.node.group.encryptedId`
+
+`csv`/`table` export every field documented on the NAC client object. `id` leads so a row can be matched back to `--update`/`--delete`. The next four columns use the CAM template's header names so the export otherwise lines up with the format `--create` expects:
+
+- `MAC address` - the client's `mac`
+- `Endpoint device group` - flattened from `groups.items[].display` into a semicolon-separated list (e.g. `Android;Corporate`)
+- `Description` - the client's `description`
+- `IPSK` - the client's `ipsk` (`configured` when a per-client iPSK passphrase is stored, otherwise empty; the passphrase itself is never returned by the API)
+
+A few remaining fields also need flattening for a flat `csv`/`table` row:
+
+- `userDetails` - semicolon-separated list of `userDetails[].username`
+- `lanIpAddresses` - an unstructured object, rendered as a compact JSON string
+- `ipv4` / `ipv6` - semicolon-separated list of addresses
+- `hasPrivateMac` - rendered as the literal `True`/`False` (not blanked out when `False`)
 
 ## API Details
 
@@ -205,26 +219,51 @@ id
   "owner": "milesmeraki",
   "mac": "22:33:44:55:66:77",
   "description": "Miles's phone",
+  "uuid": "D1055376-3448-4A94-82DB-D9BD30BBB420",
+  "userDetails": [{ "username": "milesmeraki" }],
+  "oui": { "company": "Apple, Inc." },
   "status": "Disconnected",
   "ssid": "AM-Guest",
   "source": "Discovered",
   "ipAddress": "192.168.128.3",
+  "lanIpAddresses": { "eth0": "192.168.128.3" },
+  "ipv4": ["192.168.128.3"],
+  "ipv6": ["2001:0000:130F:0000:0000:09C0:876A:130B"],
   "nadName": "68-49-92-37-61-A0:vap2",
   "hasPrivateMac": true,
+  "authenticationType": "MAB",
+  "authorizationPolicy": "Auto_Profile_Basic_1",
+  "authenticationPolicy": "A policy for whose first matched rule will return its assigned authz profile",
   "firstLogin": {
     "timestamp": "2026-01-15T08:00:00Z",
     "location": "Building A"
   },
   "lastLogin": {
     "timestamp": "2026-05-23T00:02:29Z",
-    "location": "Demo"
+    "location": "Demo",
+    "node": {
+      "id": "3",
+      "serial": "SN67890",
+      "type": "device",
+      "group": { "id": "2", "localeName": "EU", "encryptedId": "qYsTuD" }
+    }
   },
+  "lastLoginNetwork": "Last login network",
+  "lastLoginNetworkDevice": "Last login network device",
   "classification": {
     "type": "Mobile",
     "manufacturer": "Apple",
     "model": "iPhone 15",
     "os": "iOS"
-  }
+  },
+  "groups": {
+    "totalCount": 2,
+    "items": [
+      { "value": "1", "display": "Android" },
+      { "value": "2", "display": "Corporate" }
+    ]
+  },
+  "ipsk": "configured"
 }
 ```
 
@@ -312,4 +351,4 @@ All tests use pytest with async support and mock the `httpx.AsyncClient`.
 ## Version
 
 Created: 2026-06-10
-Updated: 2026-09-21
+Updated: 2026-10-21

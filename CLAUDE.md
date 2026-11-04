@@ -9,7 +9,8 @@
 
 - Update `ReadMe.md` with any new scripts and features
 - Update the `<script>.md` specification file with any added features
-- Usage examples belong in the top-of-file module docstring (the script heredoc), not in the `main()` function's docstring. Click's `--help` renders `main()`'s docstring, so keep that one short (one-paragraph summary only) and put the full `Examples:` list in the module docstring at the top of the file.
+- `Options:` and `Examples:` always belong in the top-of-file module docstring (the script heredoc) — never retyped into `main()`'s docstring or a hand-written `epilog=` string. Click's `--help` renders `main()`'s docstring, so keep that one short (one-paragraph summary only).
+- To surface the heredoc's `Examples:` block in `--help`, reuse it programmatically: slice it out of `__doc__` at runtime and pass it as `click.command(epilog=...)`, wrapping each example in Click's `\b` marker so its line breaks survive Click's paragraph rewrapping (see `cam-sessions-history.py`). The docstring stays the single source of truth — don't duplicate the example text by hand.
 
 ## Key Files
 

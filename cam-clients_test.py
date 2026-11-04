@@ -12,7 +12,9 @@
 # ///
 """Tests for cam-clients.py"""
 
+import csv
 import importlib.util
+import io
 import json
 import sys
 from datetime import datetime, timezone
@@ -124,7 +126,7 @@ class TestFormatCsv:
         result = mod.format_csv(SAMPLE_CLIENTS)
         lines = result.strip().split("\n")
         assert len(lines) == 4  # header + 3 rows
-        assert "mac" in lines[0]
+        assert "MAC address" in lines[0]
 
     def test_csv_flattens_nested_fields(self):
         result = mod.format_csv(SAMPLE_CLIENTS)
@@ -133,6 +135,117 @@ class TestFormatCsv:
     def test_csv_handles_empty_list(self):
         result = mod.format_csv([])
         assert result == ""
+
+    def test_csv_includes_groups_column_semicolon_separated(self):
+        client = {**SAMPLE_CLIENTS[0], "groups": {"totalCount": 2, "items": [
+            {"value": "1", "display": "Android"},
+            {"value": "2", "display": "Corporate"},
+        ]}}
+        result = mod.format_csv([client])
+        lines = result.strip().split("\n")
+        assert "Endpoint device group" in lines[0]
+        assert "Android;Corporate" in lines[1]
+
+    def test_csv_groups_column_empty_when_no_groups(self):
+        result = mod.format_csv(SAMPLE_CLIENTS)
+        lines = result.strip().split("\n")
+        header = lines[0].rstrip("\r").split(",")
+        groups_idx = header.index("Endpoint device group")
+        row = lines[1].rstrip("\r").split(",")
+        assert row[groups_idx] == ""
+
+    def test_csv_leads_with_id_then_cam_template_columns(self):
+        result = mod.format_csv(SAMPLE_CLIENTS)
+        header = result.strip().split("\n")[0].rstrip("\r").split(",")
+        assert header[:5] == ["id", "MAC address", "Endpoint device group", "Description", "IPSK"]
+
+    def test_csv_cam_template_columns_use_matching_values(self):
+        client = {
+            **SAMPLE_CLIENTS[0],
+            "groups": {"totalCount": 1, "items": [{"value": "1", "display": "Android"}]},
+            "ipsk": "configured",
+        }
+        result = mod.format_csv([client])
+        lines = result.strip().split("\n")
+        row = lines[1].rstrip("\r").split(",")
+        assert row[0] == client["id"]
+        assert row[1] == client["mac"]
+        assert row[2] == "Android"
+        assert row[3] == client["description"]
+        assert row[4] == "configured"
+
+    def test_csv_includes_all_documented_client_fields(self):
+        client = {
+            "id": "1",
+            "type": "corporate",
+            "owner": "jsmith",
+            "mac": "AA:BB:CC:DD:EE:01",
+            "description": "John's laptop",
+            "uuid": "D1055376-3448-4A94-82DB-D9BD30BBB420",
+            "userDetails": [{"username": "jsmith"}, {"username": "jsmith2"}],
+            "oui": {"company": "CISCO SYSTEMS, INC."},
+            "firstLogin": {"timestamp": "2026-01-15T08:00:00Z", "location": "Building A"},
+            "groups": {"totalCount": 1, "items": [{"value": "1", "display": "Android"}]},
+            "status": "Connected",
+            "ssid": "Corp-WiFi",
+            "nadName": "00-18-0a-00-79-96:vap5",
+            "ipAddress": "10.0.1.10",
+            "lanIpAddresses": {"eth0": "10.0.1.10"},
+            "ipv4": ["10.0.1.10"],
+            "ipv6": ["2001:0000:130F:0000:0000:09C0:876A:130B"],
+            "lastLogin": {
+                "timestamp": "2026-05-20T10:00:00Z",
+                "location": "Building A",
+                "node": {"id": "3", "serial": "SN67890", "type": "device", "group": {"id": "2", "localeName": "EU", "encryptedId": "qYsTuD"}},
+            },
+            "authenticationType": "MAB",
+            "authorizationPolicy": "Auto_Profile_Basic_1",
+            "authenticationPolicy": "A policy",
+            "hasPrivateMac": False,
+            "source": "Provisioned",
+            "classification": {"type": "Laptop", "manufacturer": "Apple", "model": "MacBook Pro", "os": "macOS"},
+            "lastLoginNetwork": "Last login network",
+            "lastLoginNetworkDevice": "Last login network device",
+            "ipsk": "configured",
+        }
+        result = mod.format_csv([client])
+        parsed_rows = list(csv.reader(io.StringIO(result)))
+        header, data_row = parsed_rows[0], parsed_rows[1]
+        row = dict(zip(header, data_row))
+
+        assert row["uuid"] == client["uuid"]
+        assert row["userDetails"] == "jsmith;jsmith2"
+        assert row["oui.company"] == "CISCO SYSTEMS, INC."
+        assert row["nadName"] == client["nadName"]
+        assert json.loads(row["lanIpAddresses"]) == client["lanIpAddresses"]
+        assert row["ipv4"] == "10.0.1.10"
+        assert row["ipv6"] == "2001:0000:130F:0000:0000:09C0:876A:130B"
+        assert row["authenticationType"] == "MAB"
+        assert row["authorizationPolicy"] == "Auto_Profile_Basic_1"
+        assert row["authenticationPolicy"] == "A policy"
+        assert row["hasPrivateMac"] == "False"
+        assert row["lastLoginNetwork"] == client["lastLoginNetwork"]
+        assert row["lastLoginNetworkDevice"] == client["lastLoginNetworkDevice"]
+        assert row["lastLogin.node.id"] == "3"
+        assert row["lastLogin.node.serial"] == "SN67890"
+        assert row["lastLogin.node.type"] == "device"
+        assert row["lastLogin.node.group.id"] == "2"
+        assert row["lastLogin.node.group.localeName"] == "EU"
+        assert row["lastLogin.node.group.encryptedId"] == "qYsTuD"
+
+    def test_csv_omitted_optional_fields_are_empty_not_missing(self):
+        result = mod.format_csv(SAMPLE_CLIENTS)
+        header = result.strip().split("\n")[0].rstrip("\r").split(",")
+        for col in ("uuid", "userDetails", "oui.company", "nadName", "lanIpAddresses", "ipv4", "ipv6", "hasPrivateMac"):
+            assert col in header
+
+
+class TestGetNested:
+    def test_preserves_false_boolean(self):
+        assert mod._get_nested({"hasPrivateMac": False}, "hasPrivateMac") == "False"
+
+    def test_missing_field_is_empty_string(self):
+        assert mod._get_nested({}, "hasPrivateMac") == ""
 
 
 class TestFormatTable:
