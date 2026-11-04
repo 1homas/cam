@@ -210,6 +210,38 @@ cam-network-clients.py --filter status=Online -f ssid=Guest
 cam-network-clients.py --limit 100 --format table
 ```
 
+### `cam-sessions-history.py`
+
+Download CAM NAC session history (`/nac/sessions/history`) across all pages — every authentication/authorization session in the lookback window — as JSONL (default), JSON, YAML, CSV, or a Markdown table. JSON/YAML wrap the sessions with `organizationId`, `fetchedAt`, `window`, and `count` metadata; CSV/JSONL/table emit session rows only.
+
+**Features**: Numeric `startingAfter` offset pagination (`perPage=1000`), 429 retry with `Retry-After`, stdout or `--output` file. `-p/--pages` controls how many pages to fetch (default: `0`, all, up to the 250-page safety limit). It's forced back to `0` whenever `--days` or `--t0`/`--t1` is given explicitly, so a requested window is never silently truncated. The API caps the lookback at 31 days, so `--days` defaults to that maximum. `--t0`/`--t1` exist for parity with the API surface, but the endpoint ignores them as a time bound and returns only the most recent handful of sessions — use `--days`.
+
+```sh
+# Fetch all pages for the full 31-day window, as JSONL (the default)
+cam-sessions-history.py
+
+# Cap at the first page (1000 sessions); only applies with no --days/--t0
+cam-sessions-history.py --pages 1
+
+# Pipe JSONL to jq for the most recent session
+cam-sessions-history.py | tail -1 | jq .
+
+# Session counts by result
+cam-sessions-history.py | jq -s '[.[].status] | group_by(.) | map({status: .[0], total: length})'
+
+# Last 7 days as JSON with metadata, pretty-printed, to a file
+cam-sessions-history.py --days 7 --format json --pretty -o ~/Downloads/sessions.json
+
+# Session rows as CSV for a spreadsheet
+cam-sessions-history.py --format csv > sessions.csv
+
+# Quick table preview of the last day
+cam-sessions-history.py --days 1 --format table
+
+# Override the organization, with progress logging
+cam-sessions-history.py --org 123456 --days 14 -v
+```
+
 ### `cam-clients-add.py`
 
 Bulk add NAC clients to CAM from a CSV file. Supports updating existing clients and creating new groups. Automatically batches large uploads (>1000 rows).
